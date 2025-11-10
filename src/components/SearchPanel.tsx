@@ -158,8 +158,8 @@ export default function SearchPanel({ repoId, onSearchResultClick }: SearchPanel
                 </div>
             </form>
             
-            {/* 搜索结果 */}
-            <div className="flex-1 overflow-y-auto p-2">
+            {/* 在这里添加 no-scrollbar 类 */}
+            <div className="flex-1 overflow-y-auto p-2 no-scrollbar">
                 {isLoading && (
                     <div className="flex items-center justify-center p-4 text-text-dim">
                         <Loader2 size={24} className="animate-spin" />

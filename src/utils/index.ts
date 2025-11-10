@@ -1,12 +1,36 @@
-import type { TreeItem, SearchFragment } from '../api/types'; // 修复：使用 import type
+import type { TreeItem, SearchFragment } from '../api/types';
 
 export const Utils = {
     getLanguageFromPath: (path: string): string => {
         const extension = path.split('.').pop()?.toLowerCase();
-        const langMap: Record<string, string> = { 'js': 'javascript', 'ts': 'typescript', 'py': 'python', 'go': 'go', 'java': 'java', 'c': 'c', 'cpp': 'cpp', 'cs': 'csharp', 'html': 'html', 'css': 'css', 'scss': 'scss', 'json': 'json', 'md': 'markdown', 'sh': 'bash', 'yaml': 'yaml', 'yml': 'yaml', 'rb': 'ruby', 'php': 'php', 'rs': 'rust', 'kt': 'kotlin' };
+        const langMap: Record<string, string> = {
+            'js': 'javascript',
+            'ts': 'typescript',
+            'py': 'python',
+            'go': 'go',
+            'java': 'java',
+            'c': 'c',
+            'h': 'cpp',   // 新增：将 .h 映射为 cpp 以获得更好的高亮
+            'hpp': 'cpp', // 新增：.hpp 也映射为 cpp
+            'cpp': 'cpp',
+            'cc': 'cpp',  // 新增：.cc 也映射为 cpp
+            'cs': 'csharp',
+            'html': 'html',
+            'css': 'css',
+            'scss': 'scss',
+            'json': 'json',
+            'md': 'markdown',
+            'sh': 'bash',
+            'yaml': 'yaml',
+            'yml': 'yaml',
+            'rb': 'ruby',
+            'php': 'php',
+            'rs': 'rust',
+            'kt': 'kotlin'
+        };
         return langMap[extension || ''] || 'plaintext';
     },
-
+    // ... (rest of the file remains unchanged)
     escapeHtml: (unsafe: string | null | undefined): string => {
         if (unsafe === null || unsafe === undefined) return '';
         return unsafe.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");

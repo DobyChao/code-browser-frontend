@@ -46,6 +46,38 @@ body {
   .search-highlight {
     @apply bg-yellow-300 rounded-sm px-0.5 inline;
   }
+
+  /* === 改进后的滚动条样式 === */
+  /* 默认状态：隐藏滚动条（透明） */
+  .no-scrollbar::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  
+  .no-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  
+  .no-scrollbar::-webkit-scrollbar-thumb {
+    background-color: transparent;
+    border-radius: 4px;
+  }
+
+  /* 悬停状态：显示滚动条 */
+  .no-scrollbar:hover::-webkit-scrollbar-thumb {
+    background-color: rgba(0, 0, 0, 0.2); /* 半透明灰色 */
+  }
+
+  /* Firefox 支持 */
+  .no-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+    transition: scrollbar-color 0.3s; /* 平滑过渡 */
+  }
+
+  .no-scrollbar:hover {
+    scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+  }
 }
 
 /* 4. 自定义 PrismJS 行号插件的样式 */
