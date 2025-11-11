@@ -192,7 +192,7 @@ export default function FileExplorer({ repoId, onFileSelect, activeFilePath, cla
     }, [activeFilePath, expandedPaths]);
 
     return (
-        <div className={`h-full flex flex-col bg-bg-sidebar border-r border-border-default text-text-default ${className}`}>
+        <div className={`h-full flex flex-col bg-bg-sidebar border-r border-border-default text-text-default ${className} max-w-84 flex-shrink-0`}>
             <div className="p-2 border-b border-border-default font-semibold flex justify-between items-center flex-shrink-0">
                 <span>文件资源管理器</span>
             </div>

@@ -115,6 +115,7 @@ export default function GoToFileSearch({ repoId, onFileSelect }: GoToFileSearchP
                 }`}
                 onMouseEnter={() => setActiveIndex(index)}
                 onClick={() => handleSelectFile(path)}
+                title={path}
               >
                 <FileText size={16} className="flex-shrink-0 text-text-dim" />
                 <span className="truncate">{path}</span>

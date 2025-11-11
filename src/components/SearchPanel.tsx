@@ -177,6 +177,7 @@ export default function SearchPanel({ repoId, onSearchResultClick }: SearchPanel
                             <li key={index} 
                                 className="p-2 rounded-md hover:bg-bg-hover cursor-pointer"
                                 onClick={() => onSearchResultClick(result.path, result.lineNum.toString())}
+                                title={result.path}
                             >
                                 <div className="text-sm font-medium text-button truncate">{result.path}</div>
                                 <div className="text-xs text-text-dim">行号: {result.lineNum}</div>
@@ -197,6 +198,7 @@ export default function SearchPanel({ repoId, onSearchResultClick }: SearchPanel
                             <li key={index} 
                                 className="flex items-center space-x-2 p-1 cursor-pointer rounded-md hover:bg-bg-hover"
                                 onClick={() => onSearchResultClick(path)}
+                                title={path}
                             >
                                 <FileText size={16} className="flex-shrink-0 text-text-dim" />
                                 <span className="truncate text-sm text-text-default">{path}</span>
