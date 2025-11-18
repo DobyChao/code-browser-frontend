@@ -40,8 +40,3 @@
 .read-the-docs {
   color: #888;
 }
-
-/* 修复 PrismJS 'coy' 主题在 pre 标签上产生的锯齿状伪元素 */
-pre[class*="language-"]::after {
-    display: none;
-}

@@ -47,13 +47,13 @@ interface DirectoryNodeProps {
 const DirectoryNode = React.memo(({ repoId, name, path, onFileSelect, activeFilePath, expandedPaths, onToggle }: DirectoryNodeProps) => {
     const [children, setChildren] = useState<TreeItem[]>([]);
     const [isLoading, setIsLoading] = useState(false);
-    // 使用传入的 expandedPaths 状态，实现受控组件
+    const [hasLoaded, setHasLoaded] = useState(false);
     const isOpen = expandedPaths.has(path);
 
     // 加载子节点
     const loadChildren = useCallback(async () => {
-        if (children.length > 0) return; // 已加载则跳过
         setIsLoading(true);
+        setHasLoaded(true); // 标记为已尝试加载
         try {
             const items = await api.getTree(repoId, path);
             items.sort((a, b) => {
@@ -63,17 +63,18 @@ const DirectoryNode = React.memo(({ repoId, name, path, onFileSelect, activeFile
             setChildren(items);
         } catch (error) {
             console.error(`Failed to load tree for ${path}:`, error);
+            setHasLoaded(false); // 允许重试
         } finally {
             setIsLoading(false);
         }
-    }, [repoId, path, children.length]);
+    }, [repoId, path]);
 
     // 当外部控制展开且未加载时，自动加载
     useEffect(() => {
-        if (isOpen && children.length === 0 && !isLoading) {
+        if (isOpen && !hasLoaded && !isLoading) {
             loadChildren();
         }
-    }, [isOpen, children.length, isLoading, loadChildren]);
+    }, [isOpen, hasLoaded, isLoading, loadChildren]);
 
     return (
         <li>
@@ -192,7 +193,7 @@ export default function FileExplorer({ repoId, onFileSelect, activeFilePath, cla
     }, [activeFilePath, expandedPaths]);
 
     return (
-        <div className={`h-full flex flex-col bg-bg-sidebar border-r border-border-default text-text-default ${className} max-w-84 flex-shrink-0`}>
+        <div className={`h-full flex flex-col bg-bg-sidebar border-r border-border-default text-text-default ${className}`}>
             <div className="p-2 border-b border-border-default font-semibold flex justify-between items-center flex-shrink-0">
                 <span>文件资源管理器</span>
             </div>

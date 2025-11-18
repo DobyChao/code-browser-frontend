@@ -6,11 +6,12 @@ import { buildZoektQuery } from '../utils/queryBuilder'; // 导入新工具
 import type { ContentSearchResult } from '../api/types';
 
 interface SearchPanelProps {
-  repoId: string;
-  onSearchResultClick: (path: string, lineNum?: string) => void;
+    repoId: string;
+    onSearchResultClick: (path: string, lineNum?: string) => void;
+    className?: string; // 新增：接收 className
 }
 
-export default function SearchPanel({ repoId, onSearchResultClick }: SearchPanelProps) {
+export default function SearchPanel({ repoId, onSearchResultClick, className = '' }: SearchPanelProps) {
     const [query, setQuery] = useState('');
     const [searchType, setSearchType] = useState<'content' | 'file'>('content');
     const [results, setResults] = useState<ContentSearchResult[] | string[]>([]);
@@ -18,6 +19,7 @@ export default function SearchPanel({ repoId, onSearchResultClick }: SearchPanel
     const [error, setError] = useState<string | null>(null);
 
     // 新增：搜索选项状态
+    const [hasSearched, setHasSearched] = useState(false);
     const [useZoektSyntax, setUseZoektSyntax] = useState(false); // 是否使用原生 Zoekt 语法
     const [caseSensitive, setCaseSensitive] = useState(false);
     const [wholeWord, setWholeWord] = useState(false);
@@ -25,7 +27,11 @@ export default function SearchPanel({ repoId, onSearchResultClick }: SearchPanel
 
     const handleSearch = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!query) return;
+        if (!query) {
+            setResults([]);
+            setHasSearched(false); // 如果查询为空，重置状态
+            return;
+        }
         setIsLoading(true);
         setError(null);
         setResults([]);
@@ -58,20 +64,21 @@ export default function SearchPanel({ repoId, onSearchResultClick }: SearchPanel
             setError((err as Error).message);
         }
         setIsLoading(false);
+        setHasSearched(true);
     };
 
-    // 修复：切换搜索类型时清空结果，防止白屏
     const switchSearchType = (type: 'content' | 'file') => {
-      if (searchType !== type) {
-        setResults([]); // 清空结果
-        setQuery('');     // 清空输入
-        setError(null);
-      }
-      setSearchType(type);
+        if (searchType !== type) {
+            setResults([]); // 清空结果
+            setQuery('');     // 清空输入
+            setError(null);
+            setHasSearched(false);
+        }
+        setSearchType(type);
     };
 
     return (
-        <div className="w-80 bg-bg-sidebar h-full flex flex-col border-l border-border-default text-text-default">
+        <div className={`bg-bg-sidebar h-full flex flex-col border-l border-border-default text-text-default ${className}`}>
             <div className="p-2 h-10 flex items-center justify-between border-b border-border-default">
                 <h2 className="text-sm font-semibold uppercase">搜索面板</h2>
                 {/* 原生语法切换按钮 */}
@@ -85,24 +92,20 @@ export default function SearchPanel({ repoId, onSearchResultClick }: SearchPanel
                     </button>
                 )}
             </div>
-            
+
             {/* 搜索表单 */}
             <form className="p-2 space-y-2 border-b border-border-default" onSubmit={handleSearch}>
                 <div className="flex space-x-1">
                     <button
                         type="button"
-                        className={`flex-1 p-1 text-sm rounded-l-md border border-border-input ${
-                          searchType === 'content' ? 'bg-bg-selected text-text-selected' : 'bg-bg-default hover:bg-bg-hover'
-                        }`}
+                        className={`w-1/2 p-1 text-sm rounded-l-md border border-border-input ${searchType === 'content' ? 'bg-button text-white' : 'bg-bg-default'}`}
                         onClick={() => switchSearchType('content')}
                     >
                         内容搜索
                     </button>
                     <button
                         type="button"
-                        className={`flex-1 p-1 text-sm rounded-r-md border border-border-input ${
-                          searchType === 'file' ? 'bg-bg-selected text-text-selected' : 'bg-bg-default hover:bg-bg-hover'
-                        }`}
+                        className={`w-1/2 p-1 text-sm rounded-r-md border border-border-input ${searchType === 'file' ? 'bg-button text-white' : 'bg-bg-default'}`}
                         onClick={() => switchSearchType('file')}
                     >
                         文件名搜索
@@ -117,7 +120,7 @@ export default function SearchPanel({ repoId, onSearchResultClick }: SearchPanel
                         value={query}
                         onChange={(e) => setQuery(e.target.value)}
                     />
-                    
+
                     {/* 搜索选项按钮组 (仅在不使用原生语法且为内容搜索时显示) */}
                     {!useZoektSyntax && searchType === 'content' && (
                         <div className="absolute right-8 flex items-center space-x-0.5">
@@ -148,33 +151,32 @@ export default function SearchPanel({ repoId, onSearchResultClick }: SearchPanel
                         </div>
                     )}
 
-                    <button 
-                      type="submit" 
-                      className="absolute right-0 p-1.5 text-text-dim hover:text-text-default" 
-                      disabled={isLoading}
+                    <button
+                        type="submit"
+                        className="absolute right-0 p-1.5 text-text-dim hover:text-text-default"
+                        disabled={isLoading}
                     >
                         <Search size={16} />
                     </button>
                 </div>
             </form>
-            
-            {/* 在这里添加 no-scrollbar 类 */}
-            <div className="flex-1 overflow-y-auto p-2 no-scrollbar">
+
+            <div className="flex-1 overflow-y-auto overflow-x-hidden p-2 no-scrollbar">
                 {isLoading && (
                     <div className="flex items-center justify-center p-4 text-text-dim">
                         <Loader2 size={24} className="animate-spin" />
                     </div>
                 )}
                 {error && <div className="p-2 text-red-600 text-sm">{error}</div>}
-                {!isLoading && !error && results.length === 0 && query && (
+                {!isLoading && !error && results.length === 0 && hasSearched && (
                     <div className="p-2 text-text-dim text-sm">未找到结果。</div>
                 )}
-                
+
                 {/* 内容搜索结果 */}
                 {searchType === 'content' && (
                     <ul className="space-y-2">
                         {(results as ContentSearchResult[]).map((result, index) => (
-                            <li key={index} 
+                            <li key={index}
                                 className="p-2 rounded-md hover:bg-bg-hover cursor-pointer"
                                 onClick={() => onSearchResultClick(result.path, result.lineNum.toString())}
                                 title={result.path}
@@ -190,12 +192,12 @@ export default function SearchPanel({ repoId, onSearchResultClick }: SearchPanel
                         ))}
                     </ul>
                 )}
-                
+
                 {/* 文件名搜索结果 */}
                 {searchType === 'file' && (
                     <ul className="space-y-1">
                         {(results as string[]).map((path, index) => (
-                            <li key={index} 
+                            <li key={index}
                                 className="flex items-center space-x-2 p-1 cursor-pointer rounded-md hover:bg-bg-hover"
                                 onClick={() => onSearchResultClick(path)}
                                 title={path}

@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { PanelGroup, Panel, PanelResizeHandle, type ImperativePanelHandle } from "react-resizable-panels";
 import FileExplorer from '../components/FileExplorer';
 import FileEditor from '../components/FileEditor';
 import SearchPanel from '../components/SearchPanel';
@@ -6,7 +7,7 @@ import ActivityBar from '../components/ActivityBar';
 import { api } from '../api';
 
 interface RepoViewProps {
-  repoId: string;
+    repoId: string;
 }
 
 export default function RepoView({ repoId }: RepoViewProps) {
@@ -14,8 +15,11 @@ export default function RepoView({ repoId }: RepoViewProps) {
     const [fileContent, setFileContent] = useState<string | null>(null);
     const [goToLine, setGoToLine] = useState<string | null>(null);
     const [isLoadingFile, setIsLoadingFile] = useState(false);
+
+    // 初始状态为 true
     const [isSearchPanelOpen, setIsSearchPanelOpen] = useState(true);
 
+    const searchPanelRef = useRef<ImperativePanelHandle>(null);
     const latestFilePathRef = useRef<string | null>(null);
 
     useEffect(() => {
@@ -23,22 +27,19 @@ export default function RepoView({ repoId }: RepoViewProps) {
             latestFilePathRef.current = null;
         };
     }, []);
-
     const handleFileSelect = async (path: string, lineNum: string | null = null) => {
-        // 1. 如果路径相同，只更新行号，不重新加载文件
         if (path === activeFilePath && fileContent !== null) {
-            setGoToLine(lineNum);
+            setGoToLine(null);
+            setTimeout(() => {
+                setGoToLine(lineNum);
+            }, 0);
             return;
         }
 
-        // 2. 如果是新路径，执行正常的加载流程
         latestFilePathRef.current = path;
         setIsLoadingFile(true);
         setActiveFilePath(path);
         setGoToLine(lineNum);
-        
-        // 可选：清空内容以显示加载状态，或者保留旧内容以实现平滑切换
-        // setFileContent(null); 
 
         try {
             const content = await api.getBlob(repoId, path);
@@ -55,33 +56,74 @@ export default function RepoView({ repoId }: RepoViewProps) {
         }
     };
 
+    const handleToggleSearchPanel = () => {
+        setIsSearchPanelOpen(prev => !prev);
+    };
+
     return (
-        <div className="flex h-full w-full bg-bg-default">
-            <FileExplorer 
-                repoId={repoId}
-                onFileSelect={handleFileSelect}
-                activeFilePath={activeFilePath}
-            />
-            <main className="flex-1 flex overflow-x-hidden">
-                <FileEditor 
+        <PanelGroup direction="horizontal" className="h-full w-full bg-bg-default">
+
+            {/* Panel 1: File Explorer */}
+            <Panel id="file-explorer-panel" defaultSize={20} minSize={15} collapsible={true} order={1}>
+                <FileExplorer
+                    repoId={repoId}
+                    onFileSelect={handleFileSelect}
+                    activeFilePath={activeFilePath}
+                    className="h-full"
+                />
+            </Panel>
+
+            <PanelResizeHandle className="panel-handle" />
+
+            {/* Panel 2: Editor */}
+            <Panel id="file-editor-panel" minSize={30} order={2}>
+                <FileEditor
                     filePath={activeFilePath}
                     fileContent={fileContent}
                     onPathSubmit={handleFileSelect}
                     goToLine={goToLine}
                     isLoading={isLoadingFile}
-                    className="flex-1 min-w-0"
+                    className="h-full"
                 />
-                {isSearchPanelOpen && (
-                  <SearchPanel 
-                      repoId={repoId}
-                      onSearchResultClick={handleFileSelect}
-                  />
-                )}
-            </main>
-            <ActivityBar
-              isSearchPanelOpen={isSearchPanelOpen}
-              onToggleSearchPanel={() => setIsSearchPanelOpen(!isSearchPanelOpen)}
-            />
-        </div>
+            </Panel>
+
+            <PanelResizeHandle className="panel-handle" />
+
+            {/* Panel 3: Search Panel */}
+            {isSearchPanelOpen && (
+                <>
+                    <Panel
+                        id="search-panel"
+                        ref={searchPanelRef}
+                        defaultSize={20}
+                        minSize={15}
+                        order={3}
+                    >
+                        <SearchPanel
+                            repoId={repoId}
+                            onSearchResultClick={handleFileSelect}
+                            className="h-full"
+                        />
+                    </Panel>
+                    <PanelResizeHandle className="panel-handle" disabled />
+                </>
+            )}
+
+            {/* Panel 4: Activity Bar */}
+            <Panel
+                id="activity-bar-panel"
+                defaultSize={3}
+                minSize={3}
+                maxSize={3}
+                collapsible={false}
+                order={isSearchPanelOpen ? 4 : 3}
+            >
+                <ActivityBar
+                    isSearchPanelOpen={isSearchPanelOpen}
+                    onToggleSearchPanel={handleToggleSearchPanel}
+                />
+            </Panel>
+
+        </PanelGroup>
     );
 }

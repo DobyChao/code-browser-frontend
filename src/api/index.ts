@@ -1,8 +1,10 @@
 import type { Repository, TreeItem, ContentSearchResult } from './types'; // 修复：使用 import type
 
+const DEFAULT_API_URL = import.meta.env.VITE_API_BASE_URL || '/api';
+
 // 封装所有 API 调用
 export const api = {
-    getBaseUrl: (): string => localStorage.getItem('apiBaseUrl') || 'http://localhost:8088/api',
+    getBaseUrl: (): string => localStorage.getItem('apiBaseUrl') || DEFAULT_API_URL,
     setBaseUrl: (url: string): void => localStorage.setItem('apiBaseUrl', url),
     
     async get(endpoint: string): Promise<any> {

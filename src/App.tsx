@@ -84,18 +84,33 @@ function App() {
                 onOpenSettings={() => setIsSettingsOpen(true)}
             />
             
-            <main className="flex-1 overflow-hidden">
-                {currentView === 'home' ? (
+            <main className="flex-1 overflow-hidden relative"> {/* 使用 relative 布局 */}
+                {/* 1. 主页视图 (始终渲染, 条件隐藏) */}
+                <div 
+                  className={`h-full w-full ${currentView === 'home' ? 'visible' : 'invisible'}`}
+                >
                     <HomePage 
                         repositories={repositories} 
                         onOpenRepo={handleOpenRepo}
                         isLoading={isLoadingRepos}
-                        onOpenSettings={() => setIsSettingsOpen(true)}
                     />
-                ) : (
-                    // 修复: 使用 activeTab.repoId
-                    activeTab && <RepoView key={activeTab.id} repoId={activeTab.repoId} />
-                )}
+                </div>
+
+                {/* 2. 编辑器视图 (为每个 tab 渲染一个, 条件隐藏) */}
+                {tabs.map(tab => (
+                    <div
+                        key={tab.id}
+                        // 修复：使用 'visible'/'invisible' 代替 'block'/'hidden'
+                        // 'absolute' 确保非激活的 Tab 不会占用布局空间
+                        className={`h-full w-full absolute top-0 left-0 ${
+                            currentView === 'editor' && tab.id === activeTabId 
+                              ? 'visible' 
+                              : 'invisible'
+                        }`}
+                    >
+                        <RepoView repoId={tab.repoId} />
+                    </div>
+                ))}
             </main>
             
             <SettingsModal

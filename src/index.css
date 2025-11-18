@@ -35,11 +35,12 @@ body {
 
 /* 3. 自定义功能类 */
 @layer utilities {
-  /* 修复：将 block 改为 inline-block，防止强制换行，
-     同时使用 min-w 来确保它至少占满一行。
+  /* Monaco 会在整行应用这个类
+    我们不再需要 'inline-block' 或复杂的 'min-w'
+    只需要一个简单的背景色
   */
   .line-highlight {
-    @apply bg-yellow-100 inline-block -mx-6 px-6 box-border min-w-[calc(100%+3rem)];
+    @apply bg-yellow-100;
   }
 
   /* 保持 search-highlight 为 inline */
@@ -78,42 +79,21 @@ body {
   .no-scrollbar:hover {
     scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
   }
-}
 
-/* 4. 自定义 PrismJS 行号插件的样式 */
-pre.line-numbers {
-	position: relative;
-	padding-left: 3.8em;
-	counter-reset: linenumber;
-}
-
-pre.line-numbers > code {
-	position: relative;
-	white-space: inherit;
-}
-
-.line-numbers .line-numbers-rows {
-	position: absolute;
-	pointer-events: none;
-	top: 0;
-	font-size: 100%;
-	left: -3.8em;
-	width: 3em;
-	letter-spacing: -1px;
-	border-right: 1px solid var(--color-border-default);
-	user-select: none;
-	padding-top: 1.5rem;
-}
-
-.line-numbers-rows > span {
-	display: block;
-	counter-increment: linenumber;
-}
-
-.line-numbers-rows > span:before {
-	content: counter(linenumber);
-	color: var(--color-text-dim);
-	display: block;
-	padding-right: 0.8em;
-	text-align: right;
+  /* === 新增：为 resizable panel handle 添加样式 === */
+  .panel-handle {
+    @apply w-1 bg-transparent relative outline-none transition-colors duration-200;
+  }
+  .panel-handle[data-dragging="true"],
+  .panel-handle:hover {
+    @apply bg-blue-400;
+  }
+  /* 可选：在 handle 中间添加一条细线 */
+  .panel-handle:after {
+    @apply content-[''] absolute top-0 left-1/2 -translate-x-1/2 w-px h-full bg-border-default;
+  }
+  .panel-handle:hover:after,
+  .panel-handle[data-dragging="true"]:after {
+    @apply bg-transparent;
+  }
 }
