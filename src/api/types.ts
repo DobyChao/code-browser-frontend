@@ -22,6 +22,25 @@ export interface ContentSearchResult {
   fragments: SearchFragment[];
 }
 
+export interface IntelligenceRange {
+  startLine: number;
+  startColumn: number;
+  endLine: number;
+  endColumn: number;
+  lineBase: number;
+  columnBase: number;
+}
+
+export type IntelligenceSource = 'scip' | 'search';
+
+export interface IntelligenceItem {
+  kind: 'definition' | 'reference';
+  repoId: string;
+  filePath: string;
+  range: IntelligenceRange;
+  source: IntelligenceSource;
+}
+
 // 应用内部状态
 export interface Tab {
   id: string;

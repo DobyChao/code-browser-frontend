@@ -4,6 +4,9 @@ import FileExplorer from '../components/FileExplorer';
 import FileEditor from '../components/FileEditor';
 import SearchPanel from '../components/SearchPanel';
 import ActivityBar from '../components/ActivityBar';
+import IntelligenceResults from '../components/IntelligenceResults';
+// 移除右侧 Intelligence 面板
+import type { IntelligenceItem } from '../api/types';
 import { api } from '../api';
 
 interface RepoViewProps {
@@ -17,9 +20,14 @@ export default function RepoView({ repoId }: RepoViewProps) {
     const [isLoadingFile, setIsLoadingFile] = useState(false);
 
     // 初始状态为 true
-    const [isSearchPanelOpen, setIsSearchPanelOpen] = useState(true);
+    const [activeRightPanel, setActiveRightPanel] = useState<'none' | 'search'>('search');
+    const [bottomIntelOpen, setBottomIntelOpen] = useState(false);
+    // 统一下方展示
+    const [intelItems, setIntelItems] = useState<IntelligenceItem[]>([]);
 
-    const searchPanelRef = useRef<ImperativePanelHandle>(null);
+    const rightPanelRef = useRef<ImperativePanelHandle>(null);
+    const bottomIntelRef = useRef<ImperativePanelHandle>(null);
+    const [isBottomExpanded, setIsBottomExpanded] = useState(false);
     const latestFilePathRef = useRef<string | null>(null);
 
     useEffect(() => {
@@ -56,8 +64,37 @@ export default function RepoView({ repoId }: RepoViewProps) {
         }
     };
 
-    const handleToggleSearchPanel = () => {
-        setIsSearchPanelOpen(prev => !prev);
+    const handleSelectRightPanel = (p: 'none' | 'search') => {
+        setActiveRightPanel(p);
+        const panel = rightPanelRef.current;
+        if (!panel) return;
+        if (p === 'none') {
+            panel.collapse();
+        } else {
+            panel.expand();
+        }
+    };
+
+    const openBottomIntel = (items: IntelligenceItem[]) => {
+        setIntelItems(items);
+        setBottomIntelOpen(true);
+        const panel = bottomIntelRef.current;
+        if (panel) {
+            panel.expand();
+            setIsBottomExpanded(true);
+        }
+    };
+
+    const triggerDefinitions = async ({ line, column }: { line: number; column: number }) => {
+        if (!activeFilePath) return;
+        const items = await api.getDefinitions({ repoId, filePath: activeFilePath, line: line - 1, character: column - 1 });
+        openBottomIntel(items);
+    };
+
+    const triggerReferences = async ({ line, column }: { line: number; column: number }) => {
+        if (!activeFilePath) return;
+        const items = await api.getReferences({ repoId, filePath: activeFilePath, line: line - 1, character: column - 1 });
+        openBottomIntel(items);
     };
 
     return (
@@ -73,57 +110,80 @@ export default function RepoView({ repoId }: RepoViewProps) {
                 />
             </Panel>
 
-            <PanelResizeHandle className="panel-handle" />
+            <PanelResizeHandle className="panel-handle-vertical"><div className="panel-handle-bar" /></PanelResizeHandle>
 
-            {/* Panel 2: Editor */}
-            <Panel id="file-editor-panel" minSize={30} order={2}>
-                <FileEditor
-                    filePath={activeFilePath}
-                    fileContent={fileContent}
-                    onPathSubmit={handleFileSelect}
-                    goToLine={goToLine}
-                    isLoading={isLoadingFile}
-                    className="h-full"
-                />
-            </Panel>
+            {/* Right Workspace: vertical group */}
+            <Panel id="right-workspace" minSize={30} order={2}>
+                <PanelGroup direction="vertical" className="h-full w-full">
+                    <Panel id="top-row" order={1} minSize={40} defaultSize={85}>
+                        <PanelGroup direction="horizontal" className="h-full w-full">
+                            <Panel id="file-editor-panel" order={1} minSize={40}>
+                                <FileEditor
+                                    repoId={repoId}
+                                    filePath={activeFilePath}
+                                    fileContent={fileContent}
+                                    onPathSubmit={handleFileSelect}
+                                    goToLine={goToLine}
+                                    isLoading={isLoadingFile}
+                                    className="h-full"
+                                    onIntelResults={(items) => {
+                                        openBottomIntel(items);
+                                    }}
+                                    onTriggerDefinitions={triggerDefinitions}
+                                    onTriggerReferences={triggerReferences}
+                                />
+                            </Panel>
 
-            <PanelResizeHandle className="panel-handle" />
+                            {/* RightPanel: only Search panel retained */}
+                            {activeRightPanel === 'search' && (
+                                <>
+                            <PanelResizeHandle className="panel-handle-vertical"><div className="panel-handle-bar" /></PanelResizeHandle>
+                                    <Panel id="right-panel" ref={rightPanelRef} order={2} defaultSize={20} minSize={15} collapsible={true}>
+                                        <SearchPanel
+                                            repoId={repoId}
+                                            onSearchResultClick={handleFileSelect}
+                                            className="h-full"
+                                        />
+                                    </Panel>
+                                </>
+                            )}
 
-            {/* Panel 3: Search Panel */}
-            {isSearchPanelOpen && (
-                <>
-                    <Panel
-                        id="search-panel"
-                        ref={searchPanelRef}
-                        defaultSize={20}
-                        minSize={15}
-                        order={3}
-                    >
-                        <SearchPanel
-                            repoId={repoId}
-                            onSearchResultClick={handleFileSelect}
-                            className="h-full"
+                            <PanelResizeHandle className="panel-handle pointer-events-none" disabled />
+
+                            <Panel id="activity-bar-panel" order={3} defaultSize={3} minSize={3} maxSize={3} collapsible={false}>
+                                <ActivityBar
+                                    activeRightPanel={activeRightPanel}
+                                    onSelectRightPanel={handleSelectRightPanel}
+                                />
+                            </Panel>
+                        </PanelGroup>
+                    </Panel>
+
+                    {/* Bottom Explore: collapsed shows only header (32px) */}
+                    <PanelResizeHandle className="panel-handle-horizontal"><div className="panel-handle-bar" /></PanelResizeHandle>
+                    <Panel id="intelligence-results" ref={bottomIntelRef} order={2} defaultSize={20} minSize={20} collapsible={true} collapsedSize={4}>
+                        <IntelligenceResults
+                            items={intelItems}
+                            onItemClick={(path, range) => {
+                                const line = String(range.startLine + (1 - (range.lineBase ?? 1)));
+                                handleFileSelect(path, line);
+                            }}
+                            isExpanded={isBottomExpanded}
+                            onToggleExpand={() => {
+                                const panel = bottomIntelRef.current;
+                                if (!panel) return;
+                                if (isBottomExpanded) {
+                                    panel.collapse();
+                                } else {
+                                    panel.expand();
+                                }
+                                setIsBottomExpanded(!isBottomExpanded);
+                            }}
                         />
                     </Panel>
-                    <PanelResizeHandle className="panel-handle" disabled />
-                </>
-            )}
-
-            {/* Panel 4: Activity Bar */}
-            <Panel
-                id="activity-bar-panel"
-                defaultSize={3}
-                minSize={3}
-                maxSize={3}
-                collapsible={false}
-                order={isSearchPanelOpen ? 4 : 3}
-            >
-                <ActivityBar
-                    isSearchPanelOpen={isSearchPanelOpen}
-                    onToggleSearchPanel={handleToggleSearchPanel}
-                />
+                </PanelGroup>
             </Panel>
-
+            
         </PanelGroup>
     );
 }

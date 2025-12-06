@@ -1,4 +1,4 @@
-import type { Repository, TreeItem, ContentSearchResult } from './types'; // 修复：使用 import type
+import type { Repository, TreeItem, ContentSearchResult, IntelligenceItem } from './types';
 
 const DEFAULT_API_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
@@ -22,6 +22,29 @@ export const api = {
             throw err;
         }
     },
+
+    async post(endpoint: string, body: any, options?: { signal?: AbortSignal }): Promise<any> {
+        const url = `${api.getBaseUrl()}${endpoint}`;
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(body),
+                signal: options?.signal,
+            });
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`HTTP ${response.status}: ${errorText || response.statusText}`);
+            }
+            const contentType = response.headers.get('content-type');
+            return contentType && contentType.includes('application/json') ? response.json() : response.text();
+        } catch (err) {
+            console.error(`API Error posting ${url}:`, err);
+            throw err;
+        }
+    },
     
     // 添加显式的返回类型
     getRepositories: (): Promise<Repository[]> => api.get('/repositories'),
@@ -29,4 +52,9 @@ export const api = {
     getBlob: (repoId: string, path: string): Promise<string> => api.get(`/repositories/${repoId}/blob?path=${encodeURIComponent(path)}`),
     searchContent: (repoId: string, query: string, engine: string): Promise<ContentSearchResult[]> => api.get(`/repositories/${repoId}/search?q=${encodeURIComponent(query)}&engine=${engine}`),
     searchFiles: (repoId: string, query: string, engine: string): Promise<string[]> => api.get(`/repositories/${repoId}/search-files?q=${encodeURIComponent(query)}&engine=${engine}`),
+
+    getDefinitions: (payload: { repoId: string; filePath: string; line: number; character: number }, options?: { signal?: AbortSignal }): Promise<IntelligenceItem[]> =>
+        api.post(`/intelligence/definitions`, payload, options),
+    getReferences: (payload: { repoId: string; filePath: string; line: number; character: number }, options?: { signal?: AbortSignal }): Promise<IntelligenceItem[]> =>
+        api.post(`/intelligence/references`, payload, options),
 };

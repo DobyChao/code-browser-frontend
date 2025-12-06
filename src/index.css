@@ -81,19 +81,25 @@ body {
   }
 
   /* === 新增：为 resizable panel handle 添加样式 === */
-  .panel-handle {
-    @apply w-1 bg-transparent relative outline-none transition-colors duration-200;
+  .panel-handle-horizontal {
+    @apply w-full h-0.5 relative bg-transparent cursor-row-resize;
   }
-  .panel-handle[data-dragging="true"],
-  .panel-handle:hover {
-    @apply bg-blue-400;
+  .panel-handle-horizontal .panel-handle-bar {
+    @apply absolute left-0 top-1/2 -translate-y-1/2 w-full h-0.5 bg-border-default transition-colors;
   }
-  /* 可选：在 handle 中间添加一条细线 */
-  .panel-handle:after {
-    @apply content-[''] absolute top-0 left-1/2 -translate-x-1/2 w-px h-full bg-border-default;
+  .panel-handle-horizontal:hover .panel-handle-bar,
+  .panel-handle-horizontal:active .panel-handle-bar { 
+    @apply bg-blue-400; 
   }
-  .panel-handle:hover:after,
-  .panel-handle[data-dragging="true"]:after {
-    @apply bg-transparent;
+
+  .panel-handle-vertical {
+    @apply h-full w-0.5 relative bg-transparent cursor-col-resize;
+  }
+  .panel-handle-vertical .panel-handle-bar {
+    @apply absolute left-1/2 -translate-x-1/2 top-0 h-full w-0.5 bg-border-default transition-colors;
+  }
+  .panel-handle-vertical:hover .panel-handle-bar,
+  .panel-handle-vertical:active .panel-handle-bar { 
+    @apply bg-blue-400; 
   }
 }

@@ -2,20 +2,26 @@ import React, { useEffect, useRef, useState } from 'react';
 import { FileText, Loader2 } from 'lucide-react';
 import { Utils } from '../utils';
 import Editor, { type OnMount } from '@monaco-editor/react';
+import { api } from '../api';
+import type { IntelligenceItem } from '../api/types';
 import type { editor } from 'monaco-editor';
 
 type Monaco = typeof import('monaco-editor');
 
 interface FileEditorProps {
+  repoId: string;
   filePath: string | null;
   fileContent: string | null;
   onPathSubmit: (path: string) => void;
   goToLine: string | null;
   isLoading: boolean;
   className?: string;
+  onIntelResults?: (items: IntelligenceItem[]) => void;
+  onTriggerDefinitions?: (pos: { line: number; column: number }) => void;
+  onTriggerReferences?: (pos: { line: number; column: number }) => void;
 }
 
-export default function FileEditor({ filePath, fileContent, onPathSubmit, goToLine, isLoading, className = '' }: FileEditorProps) {
+export default function FileEditor({ repoId, filePath, fileContent, onPathSubmit, goToLine, isLoading, className = '', onIntelResults, onTriggerDefinitions, onTriggerReferences }: FileEditorProps) {
     const [pathInput, setPathInput] = useState(filePath || '');
     const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
     const monacoRef = useRef<Monaco | null>(null);
@@ -38,6 +44,30 @@ export default function FileEditor({ filePath, fileContent, onPathSubmit, goToLi
         // 修复 2：添加 mousedown 事件监听器以清除高亮
         editor.onMouseDown(() => {
             decorationRef.current?.clear();
+        });
+
+        // 右键菜单触发
+        editor.addAction({
+          id: 'go-to-definition',
+          label: '转到定义',
+          contextMenuGroupId: 'navigation',
+          run: async () => {
+            if (!filePath) return;
+            const pos = editor.getPosition();
+            if (!pos) return;
+            onTriggerDefinitions?.({ line: pos.lineNumber, column: pos.column });
+          }
+        });
+        editor.addAction({
+          id: 'find-references',
+          label: '查找引用',
+          contextMenuGroupId: 'navigation',
+          run: async () => {
+            if (!filePath) return;
+            const pos = editor.getPosition();
+            if (!pos) return;
+            onTriggerReferences?.({ line: pos.lineNumber, column: pos.column });
+          }
         });
 
        // 初始加载时应用高亮
@@ -131,7 +161,7 @@ export default function FileEditor({ filePath, fileContent, onPathSubmit, goToLi
                             minimap: { enabled: true }, 
                             lineNumbers: "on", 
                             scrollBeyondLastLine: false,
-                            contextmenu: false, 
+                            contextmenu: true, 
                             fontFamily: "monospace", 
                             fontSize: 14,
                             wordWrap: "off", 
