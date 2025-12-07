@@ -46,4 +46,13 @@ export interface Tab {
   id: string;
   repoId: string;
   repoName: string;
+  state?: {
+    activeFilePath?: string | null;
+    fileContent?: string | null;
+    goToLine?: string | null;
+    searchQuery?: string;
+    searchType?: 'content' | 'file';
+    searchResults?: unknown;
+    intelItems?: import('./types').IntelligenceItem[];
+  };
 }

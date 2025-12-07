@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useSearchParams, useLocation } from 'react-router-dom';
 import { PanelGroup, Panel, PanelResizeHandle, type ImperativePanelHandle } from "react-resizable-panels";
 import FileExplorer from '../components/FileExplorer';
 import FileEditor from '../components/FileEditor';
@@ -11,13 +12,15 @@ import { api } from '../api';
 
 interface RepoViewProps {
     repoId: string;
+    isActive?: boolean;
 }
 
-export default function RepoView({ repoId }: RepoViewProps) {
+export default function RepoView({ repoId, isActive = true }: RepoViewProps) {
     const [activeFilePath, setActiveFilePath] = useState<string | null>(null);
     const [fileContent, setFileContent] = useState<string | null>(null);
     const [goToLine, setGoToLine] = useState<string | null>(null);
     const [isLoadingFile, setIsLoadingFile] = useState(false);
+    const [searchParams, setSearchParams] = useSearchParams();
 
     // 初始状态为 true
     const [activeRightPanel, setActiveRightPanel] = useState<'none' | 'search'>('search');
@@ -35,12 +38,20 @@ export default function RepoView({ repoId }: RepoViewProps) {
             latestFilePathRef.current = null;
         };
     }, []);
-    const handleFileSelect = async (path: string, lineNum: string | null = null) => {
+    const location = useLocation();
+
+    const handleFileSelect = async (path: string, lineNum: string | null = null, skipUrlUpdate: boolean = false) => {
         if (path === activeFilePath && fileContent !== null) {
             setGoToLine(null);
             setTimeout(() => {
                 setGoToLine(lineNum);
             }, 0);
+            if (isActive && !skipUrlUpdate) {
+                const next: Record<string, string> = { path };
+                if (lineNum) next.line = lineNum;
+                next.nav = String(Date.now());
+                setSearchParams(next);
+            }
             return;
         }
 
@@ -54,6 +65,12 @@ export default function RepoView({ repoId }: RepoViewProps) {
             if (path === latestFilePathRef.current) {
                 setFileContent(content);
                 setIsLoadingFile(false);
+                if (isActive && !skipUrlUpdate) {
+                    const next: Record<string, string> = { path };
+                    if (lineNum) next.line = lineNum;
+                    next.nav = String(Date.now());
+                    setSearchParams(next);
+                }
             }
         } catch (error) {
             console.error(`Failed to load blob for ${path}:`, error);
@@ -63,6 +80,22 @@ export default function RepoView({ repoId }: RepoViewProps) {
             }
         }
     };
+
+    useEffect(() => {
+        if (!isActive) return;
+        const p = searchParams.get('path');
+        const l = searchParams.get('line');
+        if (!p) return;
+        if (p === activeFilePath && fileContent !== null) {
+            setGoToLine(null);
+            setTimeout(() => {
+                setGoToLine(l);
+            }, 0);
+            return;
+        }
+        handleFileSelect(p, l, true);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [searchParams, location.key]);
 
     const handleSelectRightPanel = (p: 'none' | 'search') => {
         setActiveRightPanel(p);
@@ -115,7 +148,7 @@ export default function RepoView({ repoId }: RepoViewProps) {
             {/* Right Workspace: vertical group */}
             <Panel id="right-workspace" minSize={30} order={2}>
                 <PanelGroup direction="vertical" className="h-full w-full">
-                    <Panel id="top-row" order={1} minSize={40} defaultSize={85}>
+                    <Panel id="top-row" order={1} minSize={40} defaultSize={80}>
                         <PanelGroup direction="horizontal" className="h-full w-full">
                             <Panel id="file-editor-panel" order={1} minSize={40}>
                                 <FileEditor
@@ -187,3 +220,6 @@ export default function RepoView({ repoId }: RepoViewProps) {
         </PanelGroup>
     );
 }
+
+// 同步路由查询参数到当前视图
+ 

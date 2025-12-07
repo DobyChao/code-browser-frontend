@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Routes, Route, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { api } from './api';
 import type { Repository, Tab } from './api/types';
 import TabBar from './components/TabBar';
@@ -6,7 +7,19 @@ import SettingsModal from './components/SettingsModal';
 import HomePage from './views/HomePage';
 import RepoView from './views/RepoView';
 
+function RepoRouteBinder({ onEnsureTab }: { onEnsureTab: (repoId: string) => void }) {
+    const { repoId = '' } = useParams();
+    const location = useLocation();
+    useEffect(() => {
+        if (repoId) {
+            onEnsureTab(repoId);
+        }
+    }, [repoId, location.key]);
+    return null;
+}
+
 function App() {
+    const navigate = useNavigate();
     const [currentView, setCurrentView] = useState<'home' | 'editor'>('home');
     const [tabs, setTabs] = useState<Tab[]>([]);
     const [activeTabId, setActiveTabId] = useState<string | null>(null);
@@ -39,6 +52,7 @@ function App() {
             setActiveTabId(newTab.id);
         }
         setCurrentView('editor');
+        navigate(`/repo/${repoId}`);
     };
 
     const handleCloseTab = (tabId: string) => {
@@ -47,10 +61,13 @@ function App() {
 
         if (activeTabId === tabId) {
             if (newTabs.length > 0) {
-                setActiveTabId(newTabs[newTabs.length - 1].id);
+                const nextActive = newTabs[newTabs.length - 1];
+                setActiveTabId(nextActive.id);
+                navigate(`/repo/${nextActive.repoId}`);
             } else {
                 setActiveTabId(null);
                 setCurrentView('home');
+                navigate(`/`);
             }
         }
     };
@@ -78,39 +95,50 @@ function App() {
                 onSelectTab={(id) => {
                     setActiveTabId(id);
                     setCurrentView('editor'); // 修复：点击 Tab 时切换回编辑器视图
+                    const tab = tabs.find(t => t.id === id);
+                    if (tab) navigate(`/repo/${tab.repoId}`);
                 }}
                 onCloseTab={handleCloseTab}
-                onGoHome={() => setCurrentView('home')} // "Home" 和 "Plus" 按钮都会激活这个
+                onGoHome={() => { setCurrentView('home'); navigate(`/`); }}
                 onOpenSettings={() => setIsSettingsOpen(true)}
             />
             
-            <main className="flex-1 overflow-hidden relative"> {/* 使用 relative 布局 */}
-                {/* 1. 主页视图 (始终渲染, 条件隐藏) */}
-                <div 
-                  className={`h-full w-full ${currentView === 'home' ? 'visible' : 'invisible'}`}
-                >
-                    <HomePage 
-                        repositories={repositories} 
-                        onOpenRepo={handleOpenRepo}
-                        isLoading={isLoadingRepos}
-                    />
-                </div>
-
-                {/* 2. 编辑器视图 (为每个 tab 渲染一个, 条件隐藏) */}
-                {tabs.map(tab => (
-                    <div
-                        key={tab.id}
-                        // 修复：使用 'visible'/'invisible' 代替 'block'/'hidden'
-                        // 'absolute' 确保非激活的 Tab 不会占用布局空间
-                        className={`h-full w-full absolute top-0 left-0 ${
-                            currentView === 'editor' && tab.id === activeTabId 
-                              ? 'visible' 
-                              : 'invisible'
-                        }`}
-                    >
-                        <RepoView repoId={tab.repoId} />
-                    </div>
-                ))}
+            <main className="flex-1 overflow-hidden relative">
+                <Routes>
+                    <Route path="/" element={
+                        <div className="h-full w-full visible">
+                            <HomePage 
+                                repositories={repositories} 
+                                onOpenRepo={handleOpenRepo}
+                                isLoading={isLoadingRepos}
+                            />
+                        </div>
+                    } />
+                    <Route path="/repo/:repoId" element={
+                        <div className="h-full w-full absolute top-0 left-0 visible">
+                            {tabs.map(tab => (
+                                <div
+                                    key={tab.id}
+                                    className={`h-full w-full absolute top-0 left-0 ${tab.id === activeTabId ? 'visible' : 'invisible'}`}
+                                >
+                                    <RepoView key={tab.id} repoId={tab.repoId} isActive={tab.id === activeTabId} />
+                                </div>
+                            ))}
+                            <RepoRouteBinder onEnsureTab={(rid) => {
+                                const existingTab = tabs.find(t => t.repoId === rid);
+                                if (existingTab) {
+                                    setActiveTabId(existingTab.id);
+                                } else {
+                                    const repoName = repositories.find(r => r.id === rid)?.name || rid;
+                                    const newTab = { id: `tab_${rid}_${Date.now()}`, repoId: rid, repoName };
+                                    setTabs([...tabs, newTab]);
+                                    setActiveTabId(newTab.id);
+                                }
+                                setCurrentView('editor');
+                            }} />
+                        </div>
+                    } />
+                </Routes>
             </main>
             
             <SettingsModal
