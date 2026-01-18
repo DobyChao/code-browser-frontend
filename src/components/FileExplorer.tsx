@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { FileText, Folder, FolderOpen, ChevronRight, ChevronDown, Loader2, LocateFixed } from 'lucide-react';
+import { FileText, Folder, FolderOpen, ChevronRight, ChevronDown, LocateFixed, Loader2 } from 'lucide-react';
 import { api } from '../api';
 import type { TreeItem } from '../api/types';
 import GoToFileSearch from './GoToFileSearch';
+import Loading from './common/Loading';
 
 // --- 子组件定义 (恢复递归结构) ---
 
@@ -49,19 +50,27 @@ const DirectoryNode = React.memo(({ repoId, name, path, onFileSelect, activeFile
     const [isLoading, setIsLoading] = useState(false);
     const [hasLoaded, setHasLoaded] = useState(false);
     const isOpen = expandedPaths.has(path);
+    const abortRef = useRef<AbortController | null>(null);
 
     // 加载子节点
     const loadChildren = useCallback(async () => {
         setIsLoading(true);
         setHasLoaded(true); // 标记为已尝试加载
         try {
-            const items = await api.getTree(repoId, path);
+            abortRef.current?.abort();
+            const controller = new AbortController();
+            abortRef.current = controller;
+            const items = await api.getTree(repoId, path, { signal: controller.signal });
             items.sort((a, b) => {
                 if (a.type === b.type) return a.name.localeCompare(b.name);
                 return a.type === 'directory' ? -1 : 1;
             });
             setChildren(items);
         } catch (error) {
+            if ((error as any)?.name === 'AbortError') {
+                setIsLoading(false);
+                return;
+            }
             console.error(`Failed to load tree for ${path}:`, error);
             setHasLoaded(false); // 允许重试
         } finally {
@@ -136,7 +145,7 @@ interface FileExplorerProps {
     className?: string;
 }
 
-export default function FileExplorer({ repoId, onFileSelect, activeFilePath, className = '' }: FileExplorerProps) {
+function FileExplorerComp({ repoId, onFileSelect, activeFilePath, className = '' }: FileExplorerProps) {
     const [rootItems, setRootItems] = useState<TreeItem[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     // 将展开状态提升到主组件管理，以便实现“聚焦”功能
@@ -217,9 +226,7 @@ export default function FileExplorer({ repoId, onFileSelect, activeFilePath, cla
             <div className="flex-1 overflow-auto no-scrollbar relative z-10 " ref={containerRef}>
                 <div className="p-2 min-w-fit"> {/* min-w-fit 确保内容不会被压缩 */}
                     {isLoading ? (
-                        <div className="flex items-center justify-center p-4 text-text-dim">
-                            <Loader2 size={24} className="animate-spin" />
-                        </div>
+                        <Loading />
                     ) : (
                         <ul className="space-y-0.5 text-sm">
                             {rootItems.map(item => (
@@ -251,3 +258,5 @@ export default function FileExplorer({ repoId, onFileSelect, activeFilePath, cla
         </div>
     );
 }
+
+export default React.memo(FileExplorerComp);

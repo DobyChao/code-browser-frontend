@@ -21,7 +21,7 @@ interface FileEditorProps {
   onTriggerReferences?: (pos: { line: number; column: number }) => void;
 }
 
-export default function FileEditor({ repoId, filePath, fileContent, onPathSubmit, goToLine, isLoading, className = '', onIntelResults, onTriggerDefinitions, onTriggerReferences }: FileEditorProps) {
+function FileEditorComp({ repoId, filePath, fileContent, onPathSubmit, goToLine, isLoading, className = '', onIntelResults, onTriggerDefinitions, onTriggerReferences }: FileEditorProps) {
     const [pathInput, setPathInput] = useState(filePath || '');
     const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
     const monacoRef = useRef<Monaco | null>(null);
@@ -49,8 +49,9 @@ export default function FileEditor({ repoId, filePath, fileContent, onPathSubmit
         // 右键菜单触发
         editor.addAction({
           id: 'go-to-definition',
-          label: '转到定义',
+          label: 'Go to Definition',
           contextMenuGroupId: 'navigation',
+          keybindings: [monaco.KeyCode.F12],
           run: async () => {
             if (!filePath) return;
             const pos = editor.getPosition();
@@ -60,8 +61,9 @@ export default function FileEditor({ repoId, filePath, fileContent, onPathSubmit
         });
         editor.addAction({
           id: 'find-references',
-          label: '查找引用',
+          label: 'Find References',
           contextMenuGroupId: 'navigation',
+          keybindings: [monaco.KeyMod.Shift | monaco.KeyCode.F12],
           run: async () => {
             if (!filePath) return;
             const pos = editor.getPosition();
@@ -177,3 +179,5 @@ export default function FileEditor({ repoId, filePath, fileContent, onPathSubmit
         </div>
     );
 }
+
+export default React.memo(FileEditorComp);

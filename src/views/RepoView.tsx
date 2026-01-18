@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useSearchParams, useLocation } from 'react-router-dom';
 import { PanelGroup, Panel, PanelResizeHandle, type ImperativePanelHandle } from "react-resizable-panels";
 import FileExplorer from '../components/FileExplorer';
@@ -9,6 +9,7 @@ import IntelligenceResults from '../components/IntelligenceResults';
 // 移除右侧 Intelligence 面板
 import type { IntelligenceItem } from '../api/types';
 import { api } from '../api';
+import { RepoUIController, useRepoUIState } from '../controllers/RepoUIController';
 
 interface RepoViewProps {
     repoId: string;
@@ -16,6 +17,7 @@ interface RepoViewProps {
 }
 
 export default function RepoView({ repoId, isActive = true }: RepoViewProps) {
+    const RIGHT_PANEL_MIN_SIZE = 15;
     const [activeFilePath, setActiveFilePath] = useState<string | null>(null);
     const [fileContent, setFileContent] = useState<string | null>(null);
     const [goToLine, setGoToLine] = useState<string | null>(null);
@@ -23,15 +25,37 @@ export default function RepoView({ repoId, isActive = true }: RepoViewProps) {
     const [searchParams, setSearchParams] = useSearchParams();
 
     // 初始状态为 true
-    const [activeRightPanel, setActiveRightPanel] = useState<'none' | 'search'>('search');
-    const [bottomIntelOpen, setBottomIntelOpen] = useState(false);
     // 统一下方展示
     const [intelItems, setIntelItems] = useState<IntelligenceItem[]>([]);
 
     const rightPanelRef = useRef<ImperativePanelHandle>(null);
     const bottomIntelRef = useRef<ImperativePanelHandle>(null);
-    const [isBottomExpanded, setIsBottomExpanded] = useState(false);
     const latestFilePathRef = useRef<string | null>(null);
+    const intelAbortRef = useRef<AbortController | null>(null);
+    const fileAbortRef = useRef<AbortController | null>(null);
+    const lastIntelAtRef = useRef<number>(0);
+    const lastRightPanelSizeRef = useRef<number>(20);
+    const searchParamsRef = useRef(searchParams);
+    const isActiveRef = useRef(isActive);
+    useEffect(() => {
+        isActiveRef.current = isActive;
+    }, [isActive]);
+    useEffect(() => {
+        searchParamsRef.current = searchParams;
+    }, [searchParams]);
+    const controllerRef = useRef<RepoUIController | null>(null);
+    if (!controllerRef.current) {
+        controllerRef.current = new RepoUIController({
+            getSearchParams: () => searchParamsRef.current,
+            setSearchParams: (next) => setSearchParams(next),
+            getIsActive: () => isActiveRef.current,
+        });
+    }
+    const ui = useRepoUIState(controllerRef.current);
+    const uiRef = useRef(ui);
+    useEffect(() => {
+        uiRef.current = ui;
+    }, [ui]);
 
     useEffect(() => {
         return () => {
@@ -40,7 +64,7 @@ export default function RepoView({ repoId, isActive = true }: RepoViewProps) {
     }, []);
     const location = useLocation();
 
-    const handleFileSelect = async (path: string, lineNum: string | null = null, skipUrlUpdate: boolean = false) => {
+    const handleFileSelect = useCallback(async (path: string, lineNum: string | null = null, skipUrlUpdate: boolean = false) => {
         if (path === activeFilePath && fileContent !== null) {
             setGoToLine(null);
             setTimeout(() => {
@@ -50,6 +74,10 @@ export default function RepoView({ repoId, isActive = true }: RepoViewProps) {
                 const next: Record<string, string> = { path };
                 if (lineNum) next.line = lineNum;
                 next.nav = String(Date.now());
+                const rp = searchParams.get('rp');
+                const intel = searchParams.get('intel');
+                if (rp) next.rp = rp;
+                if (intel) next.intel = intel;
                 setSearchParams(next);
             }
             return;
@@ -61,7 +89,10 @@ export default function RepoView({ repoId, isActive = true }: RepoViewProps) {
         setGoToLine(lineNum);
 
         try {
-            const content = await api.getBlob(repoId, path);
+            fileAbortRef.current?.abort();
+            const controller = new AbortController();
+            fileAbortRef.current = controller;
+            const content = await api.getBlob(repoId, path, { signal: controller.signal });
             if (path === latestFilePathRef.current) {
                 setFileContent(content);
                 setIsLoadingFile(false);
@@ -69,6 +100,10 @@ export default function RepoView({ repoId, isActive = true }: RepoViewProps) {
                     const next: Record<string, string> = { path };
                     if (lineNum) next.line = lineNum;
                     next.nav = String(Date.now());
+                    const rp = searchParams.get('rp');
+                    const intel = searchParams.get('intel');
+                    if (rp) next.rp = rp;
+                    if (intel) next.intel = intel;
                     setSearchParams(next);
                 }
             }
@@ -79,10 +114,11 @@ export default function RepoView({ repoId, isActive = true }: RepoViewProps) {
                 setIsLoadingFile(false);
             }
         }
-    };
+    }, [activeFilePath, fileContent, isActive, repoId, searchParams, setSearchParams]);
 
     useEffect(() => {
         if (!isActive) return;
+        controllerRef.current?.syncFromUrl();
         const p = searchParams.get('path');
         const l = searchParams.get('line');
         if (!p) return;
@@ -98,36 +134,75 @@ export default function RepoView({ repoId, isActive = true }: RepoViewProps) {
     }, [searchParams, location.key]);
 
     const handleSelectRightPanel = (p: 'none' | 'search') => {
-        setActiveRightPanel(p);
-        const panel = rightPanelRef.current;
-        if (!panel) return;
-        if (p === 'none') {
-            panel.collapse();
+        const controller = controllerRef.current;
+        if (!controller) return;
+        if (p === 'search') {
+            const nextSize = Math.max(lastRightPanelSizeRef.current, RIGHT_PANEL_MIN_SIZE);
+            controller.setRightPanelSize(nextSize);
+            lastRightPanelSizeRef.current = nextSize;
+            controller.setRightPanelActive('search');
         } else {
-            panel.expand();
+            controller.setRightPanelActive('none');
         }
     };
 
+    const isRightPanelVisible = ui.right.active === 'search';
+
+    useEffect(() => {
+        if (!isActive) return;
+        const panel = bottomIntelRef.current;
+        if (!panel) return;
+        if (ui.bottom.expanded) panel.expand();
+        else panel.collapse();
+    }, [isActive, ui.bottom.expanded]);
+
     const openBottomIntel = (items: IntelligenceItem[]) => {
-        setIntelItems(items);
-        setBottomIntelOpen(true);
+        setIntelItems(prev => {
+            if (ui.bottom.pinned) {
+                const combined = [...prev, ...items];
+                return combined.slice(-200);
+            }
+            return items;
+        });
         const panel = bottomIntelRef.current;
         if (panel) {
             panel.expand();
-            setIsBottomExpanded(true);
+            controllerRef.current?.setBottomExpanded(true);
         }
     };
 
     const triggerDefinitions = async ({ line, column }: { line: number; column: number }) => {
         if (!activeFilePath) return;
-        const items = await api.getDefinitions({ repoId, filePath: activeFilePath, line: line - 1, character: column - 1 });
-        openBottomIntel(items);
+        const now = Date.now();
+        if (now - lastIntelAtRef.current < 250) return;
+        lastIntelAtRef.current = now;
+        intelAbortRef.current?.abort();
+        const controller = new AbortController();
+        intelAbortRef.current = controller;
+        try {
+            const items = await api.getDefinitions({ repoId, filePath: activeFilePath, line: line - 1, character: column - 1 }, { signal: controller.signal });
+            openBottomIntel(items);
+        } catch (e) {
+            if ((e as any)?.name === 'AbortError') return;
+            console.error(e);
+        }
     };
 
     const triggerReferences = async ({ line, column }: { line: number; column: number }) => {
         if (!activeFilePath) return;
-        const items = await api.getReferences({ repoId, filePath: activeFilePath, line: line - 1, character: column - 1 });
-        openBottomIntel(items);
+        const now = Date.now();
+        if (now - lastIntelAtRef.current < 250) return;
+        lastIntelAtRef.current = now;
+        intelAbortRef.current?.abort();
+        const controller = new AbortController();
+        intelAbortRef.current = controller;
+        try {
+            const items = await api.getReferences({ repoId, filePath: activeFilePath, line: line - 1, character: column - 1 }, { signal: controller.signal });
+            openBottomIntel(items);
+        } catch (e) {
+            if ((e as any)?.name === 'AbortError') return;
+            console.error(e);
+        }
     };
 
     return (
@@ -148,44 +223,73 @@ export default function RepoView({ repoId, isActive = true }: RepoViewProps) {
             {/* Right Workspace: vertical group */}
             <Panel id="right-workspace" minSize={30} order={2}>
                 <PanelGroup direction="vertical" className="h-full w-full">
-                    <Panel id="top-row" order={1} minSize={40} defaultSize={80}>
-                        <PanelGroup direction="horizontal" className="h-full w-full">
-                            <Panel id="file-editor-panel" order={1} minSize={40}>
-                                <FileEditor
-                                    repoId={repoId}
-                                    filePath={activeFilePath}
-                                    fileContent={fileContent}
-                                    onPathSubmit={handleFileSelect}
-                                    goToLine={goToLine}
-                                    isLoading={isLoadingFile}
-                                    className="h-full"
-                                    onIntelResults={(items) => {
-                                        openBottomIntel(items);
-                                    }}
-                                    onTriggerDefinitions={triggerDefinitions}
-                                    onTriggerReferences={triggerReferences}
-                                />
+                    <Panel id="top-row" order={1} minSize={40} defaultSize={80} className="min-w-0">
+                        <PanelGroup direction="horizontal" className="h-full w-full min-w-0">
+                            <Panel id="file-editor-panel" order={1} minSize={40} className="min-w-0">
+                            <FileEditor
+                                repoId={repoId}
+                                filePath={activeFilePath}
+                                fileContent={fileContent}
+                                onPathSubmit={handleFileSelect}
+                                goToLine={goToLine}
+                                isLoading={isLoadingFile}
+                                className="h-full"
+                                onIntelResults={(items) => {
+                                    openBottomIntel(items);
+                                }}
+                                onTriggerDefinitions={triggerDefinitions}
+                                onTriggerReferences={triggerReferences}
+                            />
                             </Panel>
 
-                            {/* RightPanel: only Search panel retained */}
-                            {activeRightPanel === 'search' && (
+                            <PanelResizeHandle
+                                className="panel-handle-vertical"
+                                disabled={!isRightPanelVisible}
+                                onDragging={(isDragging) => {
+                                    if (!isRightPanelVisible) return;
+                                    if (isDragging) return;
+                                    const panel = rightPanelRef.current;
+                                    if (!panel) return;
+                                    const size = panel.getSize();
+                                    const nextSize = Math.max(size, RIGHT_PANEL_MIN_SIZE);
+                                    if (nextSize !== size) panel.resize(nextSize);
+                                    lastRightPanelSizeRef.current = nextSize;
+                                    controllerRef.current?.setRightPanelSize(nextSize);
+                                }}
+                            >
+                                <div className="panel-handle-bar" />
+                            </PanelResizeHandle>
+                            {isRightPanelVisible && (
                                 <>
-                            <PanelResizeHandle className="panel-handle-vertical"><div className="panel-handle-bar" /></PanelResizeHandle>
-                                    <Panel id="right-panel" ref={rightPanelRef} order={2} defaultSize={20} minSize={15} collapsible={true}>
-                                        <SearchPanel
-                                            repoId={repoId}
-                                            onSearchResultClick={handleFileSelect}
-                                            className="h-full"
-                                        />
-                                    </Panel>
+                                    <Panel
+                                        id="right-panel"
+                                        ref={rightPanelRef}
+                                        order={2}
+                                        defaultSize={Math.max(ui.right.size, RIGHT_PANEL_MIN_SIZE)}
+                                        minSize={RIGHT_PANEL_MIN_SIZE}
+                                        collapsible={false}
+                                        className="min-w-0 overflow-hidden"
+                                        onResize={(size) => {
+                                            const nextSize = Math.max(size, RIGHT_PANEL_MIN_SIZE);
+                                            lastRightPanelSizeRef.current = nextSize;
+                                            controllerRef.current?.setRightPanelSize(nextSize);
+                                        }}
+                                    >
+                                    <SearchPanel
+                                        repoId={repoId}
+                                        onSearchResultClick={handleFileSelect}
+                                        className="h-full min-w-0"
+                                        state={ui.searchPanel}
+                                        onStateChange={(updater) => controllerRef.current?.setSearchPanelState(updater)}
+                                    />
+                                </Panel>
+                                    <PanelResizeHandle className="panel-handle pointer-events-none" disabled />
                                 </>
                             )}
 
-                            <PanelResizeHandle className="panel-handle pointer-events-none" disabled />
-
                             <Panel id="activity-bar-panel" order={3} defaultSize={3} minSize={3} maxSize={3} collapsible={false}>
                                 <ActivityBar
-                                    activeRightPanel={activeRightPanel}
+                                    activeRightPanel={ui.right.active}
                                     onSelectRightPanel={handleSelectRightPanel}
                                 />
                             </Panel>
@@ -197,20 +301,25 @@ export default function RepoView({ repoId, isActive = true }: RepoViewProps) {
                     <Panel id="intelligence-results" ref={bottomIntelRef} order={2} defaultSize={20} minSize={20} collapsible={true} collapsedSize={4}>
                         <IntelligenceResults
                             items={intelItems}
+                            isPinned={ui.bottom.pinned}
+                            onTogglePin={() => controllerRef.current?.togglePinned()}
+                            onClear={() => setIntelItems([])}
                             onItemClick={(path, range) => {
                                 const line = String(range.startLine + (1 - (range.lineBase ?? 1)));
                                 handleFileSelect(path, line);
                             }}
-                            isExpanded={isBottomExpanded}
+                            isExpanded={ui.bottom.expanded}
                             onToggleExpand={() => {
                                 const panel = bottomIntelRef.current;
                                 if (!panel) return;
-                                if (isBottomExpanded) {
-                                    panel.collapse();
-                                } else {
-                                    panel.expand();
-                                }
-                                setIsBottomExpanded(!isBottomExpanded);
+                                panel.expand();
+                                controllerRef.current?.setBottomExpanded(true);
+                            }}
+                            onHide={() => {
+                                const panel = bottomIntelRef.current;
+                                if (!panel) return;
+                                panel.collapse();
+                                controllerRef.current?.setBottomExpanded(false);
                             }}
                         />
                     </Panel>

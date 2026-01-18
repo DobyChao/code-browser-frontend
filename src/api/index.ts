@@ -7,10 +7,10 @@ export const api = {
     getBaseUrl: (): string => localStorage.getItem('apiBaseUrl') || DEFAULT_API_URL,
     setBaseUrl: (url: string): void => localStorage.setItem('apiBaseUrl', url),
     
-    async get(endpoint: string): Promise<any> {
+    async get(endpoint: string, options?: { signal?: AbortSignal }): Promise<any> {
         const url = `${api.getBaseUrl()}${endpoint}`;
         try {
-            const response = await fetch(url);
+            const response = await fetch(url, { signal: options?.signal });
             if (!response.ok) {
                 const errorText = await response.text();
                 throw new Error(`HTTP ${response.status}: ${errorText || response.statusText}`);
@@ -48,10 +48,14 @@ export const api = {
     
     // 添加显式的返回类型
     getRepositories: (): Promise<Repository[]> => api.get('/repositories'),
-    getTree: (repoId: string, path: string = ''): Promise<TreeItem[]> => api.get(`/repositories/${repoId}/tree?path=${encodeURIComponent(path)}`),
-    getBlob: (repoId: string, path: string): Promise<string> => api.get(`/repositories/${repoId}/blob?path=${encodeURIComponent(path)}`),
-    searchContent: (repoId: string, query: string, engine: string): Promise<ContentSearchResult[]> => api.get(`/repositories/${repoId}/search?q=${encodeURIComponent(query)}&engine=${engine}`),
-    searchFiles: (repoId: string, query: string, engine: string): Promise<string[]> => api.get(`/repositories/${repoId}/search-files?q=${encodeURIComponent(query)}&engine=${engine}`),
+    getTree: (repoId: string, path: string = '', options?: { signal?: AbortSignal }): Promise<TreeItem[]> =>
+        api.get(`/repositories/${repoId}/tree?path=${encodeURIComponent(path)}`, options),
+    getBlob: (repoId: string, path: string, options?: { signal?: AbortSignal }): Promise<string> =>
+        api.get(`/repositories/${repoId}/blob?path=${encodeURIComponent(path)}`, options),
+    searchContent: (repoId: string, query: string, engine: string, options?: { signal?: AbortSignal }): Promise<ContentSearchResult[]> =>
+        api.get(`/repositories/${repoId}/search?q=${encodeURIComponent(query)}&engine=${engine}`, options),
+    searchFiles: (repoId: string, query: string, engine: string, options?: { signal?: AbortSignal }): Promise<string[]> =>
+        api.get(`/repositories/${repoId}/search-files?q=${encodeURIComponent(query)}&engine=${engine}`, options),
 
     getDefinitions: (payload: { repoId: string; filePath: string; line: number; character: number }, options?: { signal?: AbortSignal }): Promise<IntelligenceItem[]> =>
         api.post(`/intelligence/definitions`, payload, options),
