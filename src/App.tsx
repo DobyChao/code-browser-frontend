@@ -1,18 +1,29 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Routes, Route, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { api } from './api';
 import type { Repository, Tab } from './api/types';
 import TabBar from './components/TabBar';
 import SettingsModal from './components/SettingsModal';
+import FeedbackModal from './components/FeedbackModal';
 import HomePage from './views/HomePage';
 import RepoView from './views/RepoView';
 
-function RepoRouteBinder({ onEnsureTab }: { onEnsureTab: (repoId: string) => void }) {
+function RepoRouteBinder({ tabs, onEnsureTab }: { tabs: Tab[], onEnsureTab: (repoId: string, currentTabs: Tab[]) => void }) {
     const { repoId = '' } = useParams();
     const location = useLocation();
+    
+    // 使用 ref 确保在 effect 中总是能访问到最新的 tabs 和回调函数
+    // 避免因为闭包陷阱导致使用旧的 tabs 数据
+    const tabsRef = useRef(tabs);
+    const onEnsureTabRef = useRef(onEnsureTab);
+    
+    // 每次渲染都更新 ref
+    tabsRef.current = tabs;
+    onEnsureTabRef.current = onEnsureTab;
+
     useEffect(() => {
         if (repoId) {
-            onEnsureTab(repoId);
+            onEnsureTabRef.current(repoId, tabsRef.current);
         }
     }, [repoId, location.key]);
     return null;
@@ -27,6 +38,7 @@ function App() {
     const [isLoadingRepos, setIsLoadingRepos] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+    const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
     const [apiBaseUrl, setApiBaseUrl] = useState(api.getBaseUrl());
 
     const fetchRepositories = () => {
@@ -101,6 +113,7 @@ function App() {
                 onCloseTab={handleCloseTab}
                 onGoHome={() => { setCurrentView('home'); navigate(`/`); }}
                 onOpenSettings={() => setIsSettingsOpen(true)}
+                onOpenFeedback={() => setIsFeedbackOpen(true)}
             />
             
             <main className="flex-1 overflow-hidden relative">
@@ -124,18 +137,21 @@ function App() {
                                     <RepoView key={tab.id} repoId={tab.repoId} isActive={tab.id === activeTabId} />
                                 </div>
                             ))}
-                            <RepoRouteBinder onEnsureTab={(rid) => {
-                                const existingTab = tabs.find(t => t.repoId === rid);
-                                if (existingTab) {
-                                    setActiveTabId(existingTab.id);
-                                } else {
-                                    const repoName = repositories.find(r => r.id === rid)?.name || rid;
-                                    const newTab = { id: `tab_${rid}_${Date.now()}`, repoId: rid, repoName };
-                                    setTabs([...tabs, newTab]);
-                                    setActiveTabId(newTab.id);
-                                }
-                                setCurrentView('editor');
-                            }} />
+                            <RepoRouteBinder 
+                                tabs={tabs}
+                                onEnsureTab={(rid, currentTabs) => {
+                                    const existingTab = currentTabs.find(t => t.repoId === rid);
+                                    if (existingTab) {
+                                        setActiveTabId(existingTab.id);
+                                    } else {
+                                        const repoName = repositories.find(r => r.id === rid)?.name || rid;
+                                        const newTab = { id: `tab_${rid}_${Date.now()}`, repoId: rid, repoName };
+                                        setTabs([...currentTabs, newTab]);
+                                        setActiveTabId(newTab.id);
+                                    }
+                                    setCurrentView('editor');
+                                }} 
+                            />
                         </div>
                     } />
                 </Routes>
@@ -146,6 +162,14 @@ function App() {
                 onClose={() => setIsSettingsOpen(false)}
                 apiBaseUrl={apiBaseUrl}
                 onSave={handleSaveSettings}
+            />
+            
+            <FeedbackModal
+                isOpen={isFeedbackOpen}
+                onClose={() => setIsFeedbackOpen(false)}
+                context={{
+                    repoId: activeTab?.repoId
+                }}
             />
         </div>
     );

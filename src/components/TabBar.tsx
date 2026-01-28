@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Home, Settings, Plus } from 'lucide-react';
+import { X, Home, Settings, Plus, MessageSquare } from 'lucide-react';
 import type { Tab } from '../api/types'; // 修复：使用 import type
 
 interface TabBarProps {
@@ -9,9 +9,10 @@ interface TabBarProps {
   onCloseTab: (id: string) => void;
   onGoHome: () => void;
   onOpenSettings: () => void;
+  onOpenFeedback: () => void;
 }
 
-export default function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onGoHome, onOpenSettings }: TabBarProps) {
+export default function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onGoHome, onOpenSettings, onOpenFeedback }: TabBarProps) {
     return (
         <div className="flex items-center bg-bg-header h-10 border-b border-border-default text-text-default">
             {/* 主页按钮 */}
@@ -47,15 +48,24 @@ export default function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onG
                 ))}
             </nav>
 
-            {/* 新建标签页按钮 */}
+            {/* 新建标签页按钮 (实际上是回主页选仓库) */}
             <button
                 title="打开新仓库"
-                className="p-2 h-full flex items-center justify-center text-text-dim hover:bg-bg-hover"
+                className="p-2 h-full flex items-center justify-center text-text-dim hover:bg-bg-hover border-l border-border-default"
                 onClick={onGoHome}
             >
                 <Plus size={18} />
             </button>
             
+            {/* 反馈按钮 */}
+            <button
+                title="反馈与建议"
+                className="p-2 h-full flex items-center justify-center border-l border-border-default text-text-dim hover:bg-bg-hover"
+                onClick={onOpenFeedback}
+            >
+                <MessageSquare size={18} />
+            </button>
+
             {/* 设置按钮 */}
             <button
                 title="设置"

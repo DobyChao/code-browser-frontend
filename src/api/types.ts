@@ -41,6 +41,18 @@ export interface IntelligenceItem {
   source: IntelligenceSource;
 }
 
+export interface FeedbackData {
+  type: 'issue' | 'feature';
+  title: string;
+  description: string;
+  email?: string;
+  context?: {
+    repoId?: string;
+    path?: string;
+    url?: string;
+  };
+}
+
 // 应用内部状态
 export interface Tab {
   id: string;

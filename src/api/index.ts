@@ -61,4 +61,7 @@ export const api = {
         api.post(`/intelligence/definitions`, payload, options),
     getReferences: (payload: { repoId: string; filePath: string; line: number; character: number }, options?: { signal?: AbortSignal }): Promise<IntelligenceItem[]> =>
         api.post(`/intelligence/references`, payload, options),
+    
+    submitFeedback: (data: import('./types').FeedbackData, options?: { signal?: AbortSignal }): Promise<void> =>
+        api.post('/feedback', data, options),
 };
