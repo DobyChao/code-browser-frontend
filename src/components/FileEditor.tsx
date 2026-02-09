@@ -14,14 +14,17 @@ interface FileEditorProps {
   fileContent: string | null;
   onPathSubmit: (path: string) => void;
   goToLine: string | null;
+  highlightLine: string | null;
   isLoading: boolean;
   className?: string;
   onIntelResults?: (items: IntelligenceItem[]) => void;
   onTriggerDefinitions?: (pos: { line: number; column: number }) => void;
   onTriggerReferences?: (pos: { line: number; column: number }) => void;
+  onDismissHighlight?: () => void;
+  onCommitCursorLineToUrl?: (line: number) => void;
 }
 
-function FileEditorComp({ repoId, filePath, fileContent, onPathSubmit, goToLine, isLoading, className = '', onIntelResults, onTriggerDefinitions, onTriggerReferences }: FileEditorProps) {
+function FileEditorComp({ repoId, filePath, fileContent, onPathSubmit, goToLine, highlightLine, isLoading, className = '', onIntelResults, onTriggerDefinitions, onTriggerReferences, onDismissHighlight, onCommitCursorLineToUrl }: FileEditorProps) {
     const [pathInput, setPathInput] = useState(filePath || '');
     const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
     const monacoRef = useRef<Monaco | null>(null);
@@ -44,11 +47,17 @@ function FileEditorComp({ repoId, filePath, fileContent, onPathSubmit, goToLine,
         // 修复 2：添加 mousedown 事件监听器以清除高亮
         editor.onMouseDown(() => {
             decorationRef.current?.clear();
+            onDismissHighlight?.();
+            const pos = editor.getPosition();
+            if (pos) onCommitCursorLineToUrl?.(pos.lineNumber);
         });
+
+        // 获取编辑器实例 ID 以确保 Action ID 唯一
+        const editorId = editor.getId();
 
         // 右键菜单触发
         editor.addAction({
-          id: 'go-to-definition',
+          id: `go-to-definition-${editorId}`,
           label: 'Go to Definition',
           contextMenuGroupId: 'navigation',
           keybindings: [monaco.KeyCode.F12],
@@ -60,7 +69,7 @@ function FileEditorComp({ repoId, filePath, fileContent, onPathSubmit, goToLine,
           }
         });
         editor.addAction({
-          id: 'find-references',
+          id: `find-references-${editorId}`,
           label: 'Find References',
           contextMenuGroupId: 'navigation',
           keybindings: [monaco.KeyMod.Shift | monaco.KeyCode.F12],
@@ -72,18 +81,24 @@ function FileEditorComp({ repoId, filePath, fileContent, onPathSubmit, goToLine,
           }
         });
 
-       // 初始加载时应用高亮
        applyLineHighlight(editor, monaco);
+       scrollToLine(editor, goToLine);
     };
 
-    // 封装一个函数来应用行高亮
+    const scrollToLine = (editor: editor.IStandaloneCodeEditor, line: string | null) => {
+        if (!line) return;
+        const lineNum = parseInt(line, 10);
+        if (Number.isNaN(lineNum) || lineNum < 1) return;
+        editor.revealLineInCenterIfOutsideViewport(lineNum);
+    };
+
     const applyLineHighlight = (editor: editor.IStandaloneCodeEditor, monaco: Monaco) => {
         // 修复 1：使用 collection 实例
         const collection = decorationRef.current;
         if (!collection) return; // 如果 collection 还没创建，则跳过
 
-        if (goToLine) {
-            const lineNum = parseInt(goToLine, 10);
+        if (highlightLine) {
+            const lineNum = parseInt(highlightLine, 10);
             if (!isNaN(lineNum) && lineNum >= 1) {
                 
                 // 修复 1：使用 collection.set() 来应用高亮
@@ -97,8 +112,6 @@ function FileEditorComp({ repoId, filePath, fileContent, onPathSubmit, goToLine,
                     }
                 ]);
                 
-                // 滚动到指定行
-                editor.revealLineInCenter(lineNum);
             }
         } else {
              // 修复 1：如果没有行号，确保清除 collection
@@ -112,7 +125,13 @@ function FileEditorComp({ repoId, filePath, fileContent, onPathSubmit, goToLine,
         if (editorRef.current && monacoRef.current) {
             applyLineHighlight(editorRef.current, monacoRef.current);
         }
-    }, [goToLine]);
+    }, [highlightLine, fileContent]);
+
+    useEffect(() => {
+        if (editorRef.current) {
+            scrollToLine(editorRef.current, goToLine);
+        }
+    }, [goToLine, fileContent]);
 
     // 当文件路径改变时，重置行高亮
     useEffect(() => {

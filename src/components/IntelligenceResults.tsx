@@ -12,9 +12,11 @@ interface IntelligenceResultsProps {
   onTogglePin?: () => void;
   onHide?: () => void;
   onClear?: () => void;
+  intentCategory?: 'definitions' | 'references';
+  intentSignal?: number;
 }
 
-export default function IntelligenceResults({ items, onItemClick, className = '', isExpanded, onToggleExpand, isPinned, onTogglePin, onHide, onClear }: IntelligenceResultsProps) {
+export default function IntelligenceResults({ items, onItemClick, className = '', isExpanded, onToggleExpand, isPinned, onTogglePin, onHide, onClear, intentCategory, intentSignal }: IntelligenceResultsProps) {
   const uniqueItems = useMemo(() => {
     const seen = new Set<string>();
     const out: IntelligenceItem[] = [];
@@ -30,15 +32,29 @@ export default function IntelligenceResults({ items, onItemClick, className = ''
   const defItems = uniqueItems.filter(it => it.kind === 'definition');
   const refItems = uniqueItems.filter(it => it.kind === 'reference');
   const [activeCategory, setActiveCategory] = React.useState<'definitions' | 'references'>('definitions');
+
+  // 当 intentSignal 更新时，切换到指定的分类
   React.useEffect(() => {
-    if (defItems.length > 0) {
-      setActiveCategory('definitions');
-    } else if (refItems.length > 0) {
-      setActiveCategory('references');
-    } else {
-      setActiveCategory('definitions');
+    if (intentCategory) {
+      setActiveCategory(intentCategory);
     }
-  }, [defItems.length, refItems.length]);
+  }, [intentSignal, intentCategory]);
+
+  // 如果当前分类为空，且另一个分类有数据，自动切换（作为兜底，但优先级低于 intent）
+  React.useEffect(() => {
+    if (activeCategory === 'definitions' && defItems.length === 0 && refItems.length > 0) {
+       // 只有在非 intent 驱动的情况下才自动切换？
+       // 这里保留一个简单的自动切换逻辑，防止用户看到空白页
+       // 但要注意不要跟 intent 冲突。
+       // 由于 intentSignal 是事件驱动的，这里是状态驱动的。
+       // 如果 intent 刚切过来是 definitions (0) 但 refs 有数据，这里会马上切到 references。
+       // 这符合逻辑：如果我点了 definition 但没有定义只有引用，那显示引用也是合理的。
+       setActiveCategory('references');
+    } else if (activeCategory === 'references' && refItems.length === 0 && defItems.length > 0) {
+       setActiveCategory('definitions');
+    }
+  }, [defItems.length, refItems.length, activeCategory]);
+
   const defsCount = defItems.length;
   const refsCount = refItems.length;
 
