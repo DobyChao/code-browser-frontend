@@ -42,11 +42,6 @@ function TabContent({
             controller.syncFromUrl(searchParams);
         }
     }, [isActive, searchParams, controller]);
-
-    if (!isActive) return null; // 简单处理：非激活时不渲染内容？
-    // 不，我们需要 Keep-Alive。使用 CSS 隐藏。
-    // 但是这里为了方便，我们在外层控制 display: none。
-    // 这里只负责传递数据。
     
     switch (type) {
         case 'explorer':
@@ -66,6 +61,7 @@ function TabContent({
                     fileContent={ui.editor.fileContent}
                     onPathSubmit={(path) => controller.openFile(path)}
                     goToLine={ui.editor.goToLine}
+                    goToCol={ui.editor.goToCol}
                     highlightLine={ui.editor.highlightLine}
                     isLoading={ui.editor.isLoading}
                     className="h-full"
@@ -73,14 +69,16 @@ function TabContent({
                     onTriggerDefinitions={(pos) => controller.triggerIntelligence(pos, 'definitions')}
                     onTriggerReferences={(pos) => controller.triggerIntelligence(pos, 'references')}
                     onDismissHighlight={() => controller.dismissHighlight()}
-                    onCommitCursorLineToUrl={(line) => controller.commitCursorLineToUrl(String(line))}
+                    onCommitCursorPosToUrl={(line, col) => controller.commitCursorPosToUrl(String(line), String(col))}
                 />
             );
         case 'search':
             return (
                 <SearchPanel
                     repoId={tab.repoId}
-                    onSearchResultClick={(path, line) => controller.openFile(path, line ?? null, { highlight: true })}
+                    onSearchResultClick={(path, line, col) =>
+                        controller.openFile(path, { line: line ?? null, col: col ?? null }, { highlight: true })
+                    }
                     className="h-full min-w-0"
                     state={ui.searchPanel}
                     onStateChange={(updater) => controller.setSearchPanelState(updater)}
@@ -102,7 +100,7 @@ function TabContent({
                     onClear={() => controller.clearIntelItems()}
                     onItemClick={(path, range) => {
                         const line = String(range.startLine + (1 - (range.lineBase ?? 1)));
-                        controller.openFile(path, line, { highlight: true });
+                        controller.openFile(path, { line, col: '1' }, { highlight: true });
                     }}
                     isExpanded={ui.bottom.expanded}
                     onToggleExpand={() => controller.setBottomExpanded(true)}

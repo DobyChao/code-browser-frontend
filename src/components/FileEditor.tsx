@@ -14,6 +14,7 @@ interface FileEditorProps {
   fileContent: string | null;
   onPathSubmit: (path: string) => void;
   goToLine: string | null;
+  goToCol: string | null;
   highlightLine: string | null;
   isLoading: boolean;
   className?: string;
@@ -21,13 +22,14 @@ interface FileEditorProps {
   onTriggerDefinitions?: (pos: { line: number; column: number }) => void;
   onTriggerReferences?: (pos: { line: number; column: number }) => void;
   onDismissHighlight?: () => void;
-  onCommitCursorLineToUrl?: (line: number) => void;
+  onCommitCursorPosToUrl?: (line: number, col: number) => void;
 }
 
-function FileEditorComp({ repoId, filePath, fileContent, onPathSubmit, goToLine, highlightLine, isLoading, className = '', onIntelResults, onTriggerDefinitions, onTriggerReferences, onDismissHighlight, onCommitCursorLineToUrl }: FileEditorProps) {
+function FileEditorComp({ repoId, filePath, fileContent, onPathSubmit, goToLine, goToCol, highlightLine, isLoading, className = '', onIntelResults, onTriggerDefinitions, onTriggerReferences, onDismissHighlight, onCommitCursorPosToUrl }: FileEditorProps) {
     const [pathInput, setPathInput] = useState(filePath || '');
     const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
     const monacoRef = useRef<Monaco | null>(null);
+    const commitPosTimerRef = useRef<number | null>(null);
     
     // 修复 1：将 decorationRef 的类型更改为存储 collection 实例
     const decorationRef = useRef<editor.IEditorDecorationsCollection | null>(null);
@@ -45,11 +47,14 @@ function FileEditorComp({ repoId, filePath, fileContent, onPathSubmit, goToLine,
         decorationRef.current = editor.createDecorationsCollection();
        
         // 修复 2：添加 mousedown 事件监听器以清除高亮
-        editor.onMouseDown(() => {
+        editor.onMouseDown((e) => {
             decorationRef.current?.clear();
             onDismissHighlight?.();
-            const pos = editor.getPosition();
-            if (pos) onCommitCursorLineToUrl?.(pos.lineNumber);
+            if (commitPosTimerRef.current) window.clearTimeout(commitPosTimerRef.current);
+            commitPosTimerRef.current = window.setTimeout(() => {
+                const pos = editor.getPosition();
+                if (pos) onCommitCursorPosToUrl?.(pos.lineNumber, pos.column);
+            }, 0);
         });
 
         // 获取编辑器实例 ID 以确保 Action ID 唯一
@@ -82,14 +87,19 @@ function FileEditorComp({ repoId, filePath, fileContent, onPathSubmit, goToLine,
         });
 
        applyLineHighlight(editor, monaco);
-       scrollToLine(editor, goToLine);
+       scrollToLine(editor, goToLine, goToCol);
     };
 
-    const scrollToLine = (editor: editor.IStandaloneCodeEditor, line: string | null) => {
+    const scrollToLine = (editor: editor.IStandaloneCodeEditor, line: string | null, col: string | null) => {
         if (!line) return;
         const lineNum = parseInt(line, 10);
         if (Number.isNaN(lineNum) || lineNum < 1) return;
-        editor.revealLineInCenterIfOutsideViewport(lineNum);
+        const colNum = col ? parseInt(col, 10) : 1;
+        const pos = { lineNumber: lineNum, column: Number.isNaN(colNum) || colNum < 1 ? 1 : colNum };
+        editor.setPosition(pos);
+        const monaco = monacoRef.current;
+        if (monaco) editor.setSelection(new monaco.Range(lineNum, pos.column, lineNum, pos.column));
+        editor.revealPositionInCenterIfOutsideViewport(pos);
     };
 
     const applyLineHighlight = (editor: editor.IStandaloneCodeEditor, monaco: Monaco) => {
@@ -129,9 +139,9 @@ function FileEditorComp({ repoId, filePath, fileContent, onPathSubmit, goToLine,
 
     useEffect(() => {
         if (editorRef.current) {
-            scrollToLine(editorRef.current, goToLine);
+            scrollToLine(editorRef.current, goToLine, goToCol);
         }
-    }, [goToLine, fileContent]);
+    }, [goToCol, goToLine, fileContent]);
 
     // 当文件路径改变时，重置行高亮
     useEffect(() => {

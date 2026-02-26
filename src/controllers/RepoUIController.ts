@@ -23,6 +23,9 @@ export type RepoUIState = {
     fileContent: string | null;
     isLoading: boolean;
     goToLine: string | null;
+    goToCol: string | null;
+    urlLine: string | null;
+    urlCol: string | null;
     highlightLine: string | null;
     error: string | null;
   };
@@ -59,12 +62,18 @@ export class RepoUIController {
       caseSensitive: false,
       wholeWord: false,
       isRegex: false,
+      includePattern: '',
+      excludePattern: '',
+      showAdvanced: false,
     },
     editor: {
       activeFilePath: null,
       fileContent: null,
       isLoading: false,
       goToLine: null,
+      goToCol: null,
+      urlLine: null,
+      urlCol: null,
       highlightLine: null,
       error: null,
     },
@@ -75,7 +84,6 @@ export class RepoUIController {
   private lastIntelAt = 0;
   private latestFilePath: string | null = null;
   private ignoreNextLineSyncKey: string | null = null;
-  private pendingHighlightKey: string | null = null;
 
   constructor(private deps: RepoUIControllerDeps) {}
 
@@ -91,7 +99,7 @@ export class RepoUIController {
   };
 
   private writeUrl = (
-    patch: { rp?: RepoRightPanelKind; intel?: RepoBottomPanelState; path?: string; line?: string },
+    patch: { rp?: RepoRightPanelKind; intel?: RepoBottomPanelState; path?: string; line?: string; col?: string },
     opts?: { replace?: boolean }
   ) => {
     if (!this.deps.getIsActive()) return;
@@ -106,8 +114,19 @@ export class RepoUIController {
       if (patch.line) next.set('line', patch.line);
       else next.delete('line');
     }
+    if (patch.col !== undefined) {
+      if (patch.col) next.set('col', patch.col);
+      else next.delete('col');
+    }
     next.delete('nav');
     this.deps.setSearchParams(next, opts);
+  };
+
+  private normalizeCol = (line: string | null, col: string | null) => {
+    if (!line) return null;
+    if (!col) return '1';
+    const n = parseInt(col, 10);
+    return Number.isNaN(n) || n < 1 ? '1' : String(n);
   };
 
   syncFromUrl = (params?: URLSearchParams) => {
@@ -117,6 +136,8 @@ export class RepoUIController {
     const intel = p.get('intel');
     const path = p.get('path');
     const line = p.get('line');
+    const col = p.get('col');
+    const normalizedCol = this.normalizeCol(line, col);
 
     let nextState = { ...this.state };
     let hasChanges = false;
@@ -137,16 +158,25 @@ export class RepoUIController {
 
     // Editor State Sync - Only trigger load if path changed
     if (path && path !== this.state.editor.activeFilePath) {
-      this.openFile(path, line, { skipUrlUpdate: true, highlight: false });
+      this.openFile(path, { line, col: normalizedCol }, { skipUrlUpdate: true, highlight: false });
       // openFile will emit its own updates
-    } else if (path && path === this.state.editor.activeFilePath && line !== this.state.editor.goToLine) {
-      const key = `${path}|${line || ''}`;
+    } else if (
+      path &&
+      path === this.state.editor.activeFilePath &&
+      (line !== this.state.editor.urlLine || normalizedCol !== this.state.editor.urlCol)
+    ) {
+      const key = `${path}|${line || ''}|${normalizedCol || ''}`;
       if (this.ignoreNextLineSyncKey === key) {
         this.ignoreNextLineSyncKey = null;
       } else {
-        const shouldKeepHighlight = this.pendingHighlightKey === key;
-        if (shouldKeepHighlight) this.pendingHighlightKey = null;
-        nextState.editor = { ...nextState.editor, goToLine: line, highlightLine: shouldKeepHighlight ? line : null };
+        nextState.editor = {
+          ...nextState.editor,
+          goToLine: line,
+          goToCol: normalizedCol,
+          urlLine: line,
+          urlCol: normalizedCol,
+          highlightLine: null
+        };
         hasChanges = true;
       }
     }
@@ -163,36 +193,51 @@ export class RepoUIController {
     this.emit();
   };
 
-  commitCursorLineToUrl = (lineNum: string | null) => {
+  commitCursorPosToUrl = (lineNum: string | null, colNum: string | null) => {
     const path = this.state.editor.activeFilePath;
     if (!path) return;
-    const key = `${path}|${lineNum || ''}`;
+    const normalizedCol = this.normalizeCol(lineNum, colNum);
+    if (lineNum === this.state.editor.urlLine && normalizedCol === this.state.editor.urlCol) return;
+    const key = `${path}|${lineNum || ''}|${normalizedCol || ''}`;
     this.ignoreNextLineSyncKey = key;
-    this.writeUrl({ line: lineNum || '' }, { replace: true });
+    this.state = {
+      ...this.state,
+      editor: { ...this.state.editor, goToLine: lineNum, goToCol: normalizedCol, urlLine: lineNum, urlCol: normalizedCol }
+    };
+    this.emit();
+    this.writeUrl({ line: lineNum || '', col: normalizedCol || '' }, { replace: false });
   };
 
   openFile = async (
     path: string,
-    lineNum: string | null = null,
+    pos: { line: string | null; col: string | null } = { line: null, col: null },
     opts: { skipUrlUpdate?: boolean; highlight?: boolean } = {}
   ) => {
     const shouldHighlight = opts.highlight === true;
+    const lineNum = pos.line;
+    const colNum = this.normalizeCol(lineNum, pos.col);
     if (path === this.state.editor.activeFilePath && this.state.editor.fileContent !== null) {
       this.state = {
         ...this.state,
-        editor: { ...this.state.editor, goToLine: null, highlightLine: null } // Reset first to trigger effect if needed
+        editor: { ...this.state.editor, goToLine: null, goToCol: null, highlightLine: null } // Reset first to trigger effect if needed
       };
       this.emit();
       
       setTimeout(() => {
         this.state = {
           ...this.state,
-          editor: { ...this.state.editor, goToLine: lineNum, highlightLine: shouldHighlight ? lineNum : null }
+          editor: {
+            ...this.state.editor,
+            goToLine: lineNum,
+            goToCol: colNum,
+            urlLine: lineNum,
+            urlCol: colNum,
+            highlightLine: shouldHighlight ? lineNum : null
+          }
         };
         this.emit();
         if (!opts.skipUrlUpdate) {
-          if (shouldHighlight && lineNum) this.pendingHighlightKey = `${path}|${lineNum}`;
-          this.writeUrl({ path, line: lineNum || '' }, { replace: false });
+          this.writeUrl({ path, line: lineNum || '', col: colNum || '' }, { replace: false });
         }
       }, 0);
 
@@ -207,6 +252,9 @@ export class RepoUIController {
         activeFilePath: path,
         isLoading: true,
         goToLine: lineNum,
+        goToCol: colNum,
+        urlLine: lineNum,
+        urlCol: colNum,
         highlightLine: shouldHighlight ? lineNum : null,
         error: null
       }
@@ -228,8 +276,7 @@ export class RepoUIController {
         this.emit();
 
         if (!opts.skipUrlUpdate) {
-            if (shouldHighlight && lineNum) this.pendingHighlightKey = `${path}|${lineNum}`;
-          this.writeUrl({ path, line: lineNum || '' }, { replace: false });
+          this.writeUrl({ path, line: lineNum || '', col: colNum || '' }, { replace: false });
         }
       }
     } catch (error) {

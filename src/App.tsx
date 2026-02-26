@@ -131,16 +131,29 @@ function App() {
 
     useEffect(fetchRepositories, [apiBaseUrl]);
 
+    const buildSearchForRepo = (repoId: string) => {
+        const controller = controllersRef.current.get(repoId);
+        if (!controller) return '';
+        const ui = controller.getSnapshot();
+        const params = new URLSearchParams();
+        if (ui.right.active) params.set('rp', ui.right.active);
+        params.set('intel', ui.bottom.expanded ? 'open' : 'closed');
+        if (ui.editor.activeFilePath) params.set('path', ui.editor.activeFilePath);
+        if (ui.editor.urlLine) params.set('line', ui.editor.urlLine);
+        if (ui.editor.urlCol) params.set('col', ui.editor.urlCol);
+        return params.toString();
+    };
+
     useEffect(() => {
-        if (activeTabId) return;
         const match = location.pathname.match(/^\/repo\/([^/]+)$/);
         if (!match) return;
         const rid = match[1];
         const tab = tabs.find(t => t.repoId === rid);
         if (!tab) return;
-        setActiveTabId(tab.id);
+        if (activeTabIdRef.current !== tab.id) setActiveTabId(tab.id);
+        ensureController(rid);
         setCurrentView('editor');
-    }, [activeTabId, tabs, location.pathname]);
+    }, [tabs, location.pathname]);
 
     const handleOpenRepo = (repoId: string, repoName: string) => {
         const tabId = `tab_${repoId}`;
@@ -151,7 +164,8 @@ function App() {
         setActiveTabId(tabId);
         ensureController(repoId);
         setCurrentView('editor');
-        navigate(`/repo/${repoId}`);
+        const search = buildSearchForRepo(repoId);
+        navigate({ pathname: `/repo/${repoId}`, search: search ? `?${search}` : '' }, { replace: false });
     };
 
     const handleCloseTab = (tabId: string) => {
@@ -162,7 +176,8 @@ function App() {
             if (newTabs.length > 0) {
                 const nextActive = newTabs[newTabs.length - 1];
                 setActiveTabId(nextActive.id);
-                navigate(`/repo/${nextActive.repoId}`);
+                const search = buildSearchForRepo(nextActive.repoId);
+                navigate({ pathname: `/repo/${nextActive.repoId}`, search: search ? `?${search}` : '' }, { replace: true });
             } else {
                 setActiveTabId(null);
                 setCurrentView('home');
@@ -196,7 +211,10 @@ function App() {
                     setActiveTabId(id);
                     setCurrentView('editor'); 
                     const tab = tabs.find(t => t.id === id);
-                    if (tab) navigate(`/repo/${tab.repoId}`);
+                    if (!tab) return;
+                    ensureController(tab.repoId);
+                    const search = buildSearchForRepo(tab.repoId);
+                    navigate({ pathname: `/repo/${tab.repoId}`, search: search ? `?${search}` : '' }, { replace: false });
                 }}
                 onCloseTab={handleCloseTab}
                 onGoHome={() => { setCurrentView('home'); navigate(`/`); }}

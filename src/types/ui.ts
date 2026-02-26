@@ -12,5 +12,7 @@ export type SearchPanelState = {
   caseSensitive: boolean;
   wholeWord: boolean;
   isRegex: boolean;
+  includePattern: string;
+  excludePattern: string;
+  showAdvanced: boolean;
 };
-

@@ -70,3 +70,28 @@ export function buildZoektQuery(input: string, options: SearchOptions): string {
 
   return query.trim();
 }
+
+export function buildZoektFileQuery(input: string, options: SearchOptions): string {
+  if (!input) return ''
+
+  const raw = input.trim()
+  if (!raw) return ''
+
+  let pattern = raw
+
+  if (!options.regex) {
+    pattern = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  }
+
+  if (options.wholeWord) {
+    const escaped = options.regex ? pattern : raw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    pattern = `\\b${escaped}\\b`
+  }
+
+  let query = `file:${pattern}`
+
+  if (options.caseSensitive) query = `case:yes ${query}`
+  else query = `case:no ${query}`
+
+  return query.trim()
+}

@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Search, FileText, CaseSensitive, WholeWord, Regex, CodeXml, ChevronDown, ChevronRight, List, ListTree } from 'lucide-react';
+import { Search, FileText, CaseSensitive, WholeWord, Regex, CodeXml, ChevronDown, ChevronRight, List, ListTree, X, MoreHorizontal } from 'lucide-react';
 import { api } from '../api';
 import { Utils } from '../utils';
-import { buildZoektQuery } from '../utils/queryBuilder'; // 导入新工具
+import { buildZoektFileQuery, buildZoektQuery } from '../utils/queryBuilder'; // 导入新工具
 import type { ContentSearchResult } from '../api/types';
 import type { SearchPanelState } from '../types/ui';
 import Loading from './common/Loading';
@@ -12,7 +12,7 @@ export type { SearchPanelState };
 
 interface SearchPanelProps {
     repoId: string;
-    onSearchResultClick: (path: string, lineNum?: string) => void;
+    onSearchResultClick: (path: string, lineNum?: string, colNum?: string) => void;
     className?: string; // 新增：接收 className
     state?: SearchPanelState;
     onStateChange?: React.Dispatch<React.SetStateAction<SearchPanelState>>;
@@ -33,6 +33,9 @@ export default function SearchPanel(props: SearchPanelProps) {
         caseSensitive: false,
         wholeWord: false,
         isRegex: false,
+        includePattern: '',
+        excludePattern: '',
+        showAdvanced: false,
     });
     const state = (isControlled ? props.state : internalState) as SearchPanelState;
     const setState = (isControlled ? props.onStateChange : setInternalState) as React.Dispatch<React.SetStateAction<SearchPanelState>>;
@@ -54,6 +57,9 @@ export default function SearchPanel(props: SearchPanelProps) {
     const caseSensitive = state.caseSensitive;
     const wholeWord = state.wholeWord;
     const isRegex = state.isRegex;
+    const includePattern = state.includePattern;
+    const excludePattern = state.excludePattern;
+    const showAdvanced = state.showAdvanced;
 
     const contentResults = (searchType === 'content' ? (results as ContentSearchResult[]) : []) ?? [];
     const fileResults = (searchType === 'file' ? (results as string[]) : []) ?? [];
@@ -231,7 +237,7 @@ export default function SearchPanel(props: SearchPanelProps) {
 
     const handleSearch = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!query) {
+        if (!query && !includePattern.trim() && !excludePattern.trim()) {
             setState(prev => ({ ...prev, results: [], hasSearched: false }));
             return;
         }
@@ -251,6 +257,22 @@ export default function SearchPanel(props: SearchPanelProps) {
                     regex: isRegex,
                 });
             }
+            if (!useZoektSyntax && searchType === 'file') {
+                finalQuery = buildZoektFileQuery(query, {
+                    caseSensitive,
+                    wholeWord,
+                    regex: isRegex,
+                });
+            }
+            if (searchType === 'content' && !useZoektSyntax) {
+                const include = includePattern.trim();
+                const exclude = excludePattern.trim();
+                const prefix = [
+                    include ? `file:${include}` : '',
+                    exclude ? `-file:${exclude}` : '',
+                ].filter(Boolean).join(' ');
+                finalQuery = `${prefix} ${finalQuery}`.trim();
+            }
 
             let searchResults;
             const engine = 'zoekt';
@@ -260,7 +282,14 @@ export default function SearchPanel(props: SearchPanelProps) {
                 // 文件名搜索通常比较简单，可能不需要复杂的构建器，或者只需要部分功能
                 // 这里暂时保持原样，直接传 query。如果需要也可以应用 buildZoektQuery，
                 // 但需要调整 buildZoektQuery 以支持 file: 前缀
-                searchResults = await api.searchFiles(repoId, query, engine, { signal: controller.signal });
+                const raw = await api.searchFiles(repoId, finalQuery, engine, { signal: controller.signal });
+                const includes = includePattern.split(',').map(s => s.trim()).filter(Boolean);
+                const excludes = excludePattern.split(',').map(s => s.trim()).filter(Boolean);
+                searchResults = raw.filter((p) => {
+                    if (includes.length > 0 && !includes.some(k => p.includes(k))) return false;
+                    if (excludes.length > 0 && excludes.some(k => p.includes(k))) return false;
+                    return true;
+                });
             }
             setState(prev => ({ ...prev, results: searchResults || [] }));
         } catch (err) {
@@ -275,7 +304,7 @@ export default function SearchPanel(props: SearchPanelProps) {
 
     const switchSearchType = (type: 'content' | 'file') => {
         if (searchType !== type) {
-            setState(prev => ({ ...prev, results: [], query: '', error: null, hasSearched: false }));
+            setState(prev => ({ ...prev, results: [], error: null, hasSearched: false }));
         }
         setState(prev => ({ ...prev, searchType: type }));
     };
@@ -297,7 +326,9 @@ export default function SearchPanel(props: SearchPanelProps) {
             if (selectedIndex < 0) return;
             if (searchType === 'content') {
                 const r = visibleMatches[selectedIndex];
-                onSearchResultClick(r.path, String(r.lineNum));
+                const minOffset = r.fragments?.reduce((m, f) => Math.min(m, f.offset), Number.POSITIVE_INFINITY);
+                const col = Number.isFinite(minOffset) ? String(minOffset + 1) : undefined;
+                onSearchResultClick(r.path, String(r.lineNum), col);
             } else {
                 const path = fileResults[selectedIndex];
                 onSearchResultClick(path);
@@ -345,7 +376,17 @@ export default function SearchPanel(props: SearchPanelProps) {
                         <button
                             title="使用 Zoekt 原生语法"
                             className={`p-1 rounded-md ${useZoektSyntax ? 'bg-bg-hover text-text-default' : 'text-text-dim hover:bg-bg-hover'}`}
-                            onClick={() => setState(prev => ({ ...prev, useZoektSyntax: !prev.useZoektSyntax }))}
+                            onClick={() =>
+                                setState(prev => {
+                                    const next = !prev.useZoektSyntax;
+                                    return {
+                                        ...prev,
+                                        useZoektSyntax: next,
+                                        searchType: next ? 'content' : prev.searchType,
+                                        showAdvanced: next ? false : prev.showAdvanced,
+                                    };
+                                })
+                            }
                         >
                             <CodeXml size={16} />
                         </button>
@@ -355,36 +396,18 @@ export default function SearchPanel(props: SearchPanelProps) {
 
             {/* 搜索表单 */}
             <form className="p-2 space-y-2 border-b border-border-default" onSubmit={handleSearch}>
-                <div className="flex space-x-1">
-                    <button
-                        type="button"
-                        className={`w-1/2 p-1 text-sm rounded-l-md border border-border-input ${searchType === 'content' ? 'bg-button text-white' : 'bg-bg-default'}`}
-                        onClick={() => switchSearchType('content')}
-                    >
-                        内容搜索
-                    </button>
-                    <button
-                        type="button"
-                        className={`w-1/2 p-1 text-sm rounded-r-md border border-border-input ${searchType === 'file' ? 'bg-button text-white' : 'bg-bg-default'}`}
-                        onClick={() => switchSearchType('file')}
-                    >
-                        文件名搜索
-                    </button>
-                </div>
-
                 <div className="relative flex items-center">
                     <input
                         ref={inputRef}
                         type="text"
                         placeholder={useZoektSyntax ? "输入 Zoekt 查询..." : "搜索..."}
-                        className="w-full px-2 py-1 pr-24 text-sm bg-bg-input border border-border-input rounded-md" // 增加右侧 padding 给按钮留位置
+                        className="w-full px-2 py-1 pr-24 text-sm bg-bg-input border border-border-input rounded-md"
                         value={query}
                         onChange={(e) => setState(prev => ({ ...prev, query: e.target.value }))}
                         onKeyDown={handleInputKeyDown}
                     />
 
-                    {/* 搜索选项按钮组 (仅在不使用原生语法且为内容搜索时显示) */}
-                    {!useZoektSyntax && searchType === 'content' && (
+                    {!useZoektSyntax && (searchType === 'content' || searchType === 'file') && (
                         <div className="absolute right-8 flex items-center space-x-0.5">
                             <button
                                 type="button"
@@ -421,6 +444,71 @@ export default function SearchPanel(props: SearchPanelProps) {
                         <Search size={16} />
                     </button>
                 </div>
+
+                {!useZoektSyntax && (
+                    <div className="flex items-center space-x-1">
+                        <select
+                            aria-label="搜索类型"
+                            className="flex-1 px-2 py-1 pr-8 text-sm bg-bg-input border border-border-input rounded-md"
+                            value={searchType}
+                            onChange={(e) => switchSearchType(e.target.value as 'content' | 'file')}
+                        >
+                            <option value="content">搜索文本</option>
+                            <option value="file">搜索文件</option>
+                        </select>
+                        <button
+                            type="button"
+                            title="包含/排除"
+                            className={`p-1 rounded-md ${showAdvanced ? 'bg-bg-hover text-text-default' : 'text-text-dim hover:bg-bg-hover'}`}
+                            onClick={() => setState(prev => ({ ...prev, showAdvanced: !prev.showAdvanced }))}
+                        >
+                            <MoreHorizontal size={16} />
+                        </button>
+                    </div>
+                )}
+
+                {!useZoektSyntax && showAdvanced && (
+                    <>
+                        <div className="relative">
+                            <input
+                                type="text"
+                                placeholder="包含文件"
+                                className="w-full px-2 py-1 pr-8 text-sm bg-bg-input border border-border-input rounded-md"
+                                value={includePattern}
+                                onChange={(e) => setState(prev => ({ ...prev, includePattern: e.target.value }))}
+                            />
+                            {includePattern && (
+                                <button
+                                    type="button"
+                                    title="清空"
+                                    className="absolute right-1 top-1 p-1 rounded-md text-text-dim hover:bg-bg-hover"
+                                    onClick={() => setState(prev => ({ ...prev, includePattern: '' }))}
+                                >
+                                    <X size={14} />
+                                </button>
+                            )}
+                        </div>
+                        <div className="relative">
+                            <input
+                                type="text"
+                                placeholder="排除文件"
+                                className="w-full px-2 py-1 pr-8 text-sm bg-bg-input border border-border-input rounded-md"
+                                value={excludePattern}
+                                onChange={(e) => setState(prev => ({ ...prev, excludePattern: e.target.value }))}
+                            />
+                            {excludePattern && (
+                                <button
+                                    type="button"
+                                    title="清空"
+                                    className="absolute right-1 top-1 p-1 rounded-md text-text-dim hover:bg-bg-hover"
+                                    onClick={() => setState(prev => ({ ...prev, excludePattern: '' }))}
+                                >
+                                    <X size={14} />
+                                </button>
+                            )}
+                        </div>
+                    </>
+                )}
             </form>
 
             <div
@@ -473,7 +561,11 @@ export default function SearchPanel(props: SearchPanelProps) {
                                                                 data-tooltip={`${result.path}:${result.lineNum}\n${result.lineText}`}
                                                                 className={`px-2 py-1 cursor-pointer tooltip ${isSelected ? 'bg-bg-hover border-l-2 border-button' : 'hover:bg-bg-hover'}`}
                                                                 onMouseEnter={() => setSelectedIndex(visibleIndex)}
-                                                                onClick={() => onSearchResultClick(result.path, result.lineNum.toString())}
+                                                                onClick={() => {
+                                                                    const minOffset = result.fragments?.reduce((m, f) => Math.min(m, f.offset), Number.POSITIVE_INFINITY);
+                                                                    const col = Number.isFinite(minOffset) ? String(minOffset + 1) : undefined;
+                                                                    onSearchResultClick(result.path, result.lineNum.toString(), col);
+                                                                }}
                                                             >
                                                                 <div className="flex items-start space-x-2">
                                                                     <span className="text-xs flex-shrink-0 text-text-dim">{result.lineNum}</span>
@@ -560,7 +652,11 @@ export default function SearchPanel(props: SearchPanelProps) {
                                                                     className={`px-2 py-1 cursor-pointer tooltip ${isSelected ? 'bg-bg-hover border-l-2 border-button' : 'hover:bg-bg-hover'}`}
                                                                     style={{ paddingLeft: 8 + (depth + 1) * 12 }}
                                                                     onMouseEnter={() => setSelectedIndex(visibleIndex)}
-                                                                    onClick={() => onSearchResultClick(result.path, result.lineNum.toString())}
+                                                                    onClick={() => {
+                                                                        const minOffset = result.fragments?.reduce((m, f) => Math.min(m, f.offset), Number.POSITIVE_INFINITY);
+                                                                        const col = Number.isFinite(minOffset) ? String(minOffset + 1) : undefined;
+                                                                        onSearchResultClick(result.path, result.lineNum.toString(), col);
+                                                                    }}
                                                                 >
                                                                     <div className="flex items-start space-x-2">
                                                                         <span className="text-xs flex-shrink-0 text-text-dim">{result.lineNum}</span>
