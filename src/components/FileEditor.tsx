@@ -193,8 +193,10 @@ function FileEditorComp({ repoId, filePath, fileContent, onPathSubmit, goToLine,
                             lineNumbers: "on", 
                             scrollBeyondLastLine: false,
                             contextmenu: true, 
-                            fontFamily: "monospace", 
+                            fontFamily: "Consolas, Menlo, Monaco, 'Courier New', monospace", 
                             fontSize: 14,
+                            letterSpacing: 0,
+                            fontLigatures: false,
                             wordWrap: "off", 
                         }}
                     />

@@ -110,12 +110,12 @@ export default function GoToFileSearch({ repoId, onFileSelect }: GoToFileSearchP
             {results.map((path, index) => (
               <li
                 key={path}
-                className={`flex items-center space-x-2 px-3 py-1.5 text-sm cursor-pointer ${
+                className={`flex items-center space-x-2 px-3 py-1.5 text-sm cursor-pointer tooltip tooltip-immediate ${
                   index === activeIndex ? 'bg-bg-selected text-text-selected' : 'hover:bg-bg-hover'
                 }`}
                 onMouseEnter={() => setActiveIndex(index)}
                 onClick={() => handleSelectFile(path)}
-                title={path}
+                data-tooltip={path}
               >
                 <FileText size={16} className="flex-shrink-0 text-text-dim" />
                 <span className="truncate">{path}</span>

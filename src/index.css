@@ -135,4 +135,8 @@ body {
     visibility: visible;
     transition-delay: 400ms;
   }
+
+  .tooltip.tooltip-immediate[data-tooltip]:hover::after {
+    transition-delay: 0ms;
+  }
 }
