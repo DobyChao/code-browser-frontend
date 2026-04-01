@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { Loader2, Search, FileText } from 'lucide-react';
+import { createPortal } from 'react-dom';
 import { api } from '../api';
 import { Utils } from '../utils';
 
@@ -14,6 +15,8 @@ export default function GoToFileSearch({ repoId, onFileSelect }: GoToFileSearchP
   const [isLoading, setIsLoading] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
+  const [hoveredPath, setHoveredPath] = useState<string | null>(null);
+  const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const debouncedSearch = useMemo(
@@ -27,10 +30,10 @@ export default function GoToFileSearch({ repoId, onFileSelect }: GoToFileSearchP
         }
         try {
           const files = await api.searchFiles(repoId, searchQuery, 'zoekt');
-          setResults(files.slice(0, 15)); // 限制最多15个结果
+          setResults(files.slice(0, 15));
           setIsLoading(false);
           setIsDropdownOpen(files.length > 0);
-          setActiveIndex(0); // 默认选中第一个
+          setActiveIndex(0);
         } catch (error) {
           console.error('File search failed:', error);
           setIsLoading(false);
@@ -71,7 +74,17 @@ export default function GoToFileSearch({ repoId, onFileSelect }: GoToFileSearchP
     }
   };
 
-  // 点击外部关闭下拉框
+  const handleItemEnter = (path: string, el: HTMLElement) => {
+    setHoveredPath(path);
+    const rect = el.getBoundingClientRect();
+    setTooltipPos({ x: rect.right + 6, y: rect.top });
+  };
+
+  const handleItemLeave = () => {
+    setHoveredPath(null);
+    setTooltipPos(null);
+  };
+
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -110,12 +123,15 @@ export default function GoToFileSearch({ repoId, onFileSelect }: GoToFileSearchP
             {results.map((path, index) => (
               <li
                 key={path}
-                className={`flex items-center space-x-2 px-3 py-1.5 text-sm cursor-pointer tooltip tooltip-immediate ${
+                className={`flex items-center space-x-2 px-3 py-1.5 text-sm cursor-pointer ${
                   index === activeIndex ? 'bg-bg-selected text-text-selected' : 'hover:bg-bg-hover'
                 }`}
-                onMouseEnter={() => setActiveIndex(index)}
+                onMouseEnter={(e) => {
+                  setActiveIndex(index);
+                  handleItemEnter(path, e.currentTarget);
+                }}
+                onMouseLeave={handleItemLeave}
                 onClick={() => handleSelectFile(path)}
-                data-tooltip={path}
               >
                 <FileText size={16} className="flex-shrink-0 text-text-dim" />
                 <span className="truncate">{path}</span>
@@ -123,6 +139,21 @@ export default function GoToFileSearch({ repoId, onFileSelect }: GoToFileSearchP
             ))}
           </ul>
         </div>
+      )}
+      {hoveredPath && tooltipPos && createPortal(
+        <div
+          style={{
+            position: 'fixed',
+            left: tooltipPos.x,
+            top: tooltipPos.y,
+            zIndex: 9999,
+            pointerEvents: 'none',
+          }}
+          className="px-2 py-1 text-xs rounded bg-bg-default text-text-default border border-border-default shadow-lg whitespace-nowrap"
+        >
+          {hoveredPath}
+        </div>,
+        document.body
       )}
     </div>
   );

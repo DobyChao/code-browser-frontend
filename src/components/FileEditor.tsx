@@ -45,16 +45,28 @@ function FileEditorComp({ repoId, filePath, fileContent, onPathSubmit, goToLine,
         
         // 修复 1：创建一次 Decorations Collection
         decorationRef.current = editor.createDecorationsCollection();
-       
-        // 修复 2：添加 mousedown 事件监听器以清除高亮
-        editor.onMouseDown((e) => {
+
+        // 修复 2：添加 mouseup 事件监听器，区分单击和双击
+        // 原理：双击时 Monaco 会创建选择，单击时选择为空
+        // 我们只在选择为空时（纯单击）更新 URL，避免干扰双击选词
+        editor.onMouseUp(() => {
+            // 清除高亮
             decorationRef.current?.clear();
             onDismissHighlight?.();
-            if (commitPosTimerRef.current) window.clearTimeout(commitPosTimerRef.current);
-            commitPosTimerRef.current = window.setTimeout(() => {
-                const pos = editor.getPosition();
-                if (pos) onCommitCursorPosToUrl?.(pos.lineNumber, pos.column);
-            }, 0);
+
+            // 检查是否有选择：双击/多选时选择不为空
+            const selection = editor.getSelection();
+            const hasSelection = selection && !selection.isEmpty();
+
+            // 只在没有选择时（纯单击）才更新 URL
+            // 双击时 hasSelection=true，跳过 URL 更新，不干扰选择
+            if (!hasSelection) {
+                if (commitPosTimerRef.current) window.clearTimeout(commitPosTimerRef.current);
+                commitPosTimerRef.current = window.setTimeout(() => {
+                    const pos = editor.getPosition();
+                    if (pos) onCommitCursorPosToUrl?.(pos.lineNumber, pos.column);
+                }, 0);
+            }
         });
 
         // 获取编辑器实例 ID 以确保 Action ID 唯一
@@ -179,7 +191,7 @@ function FileEditorComp({ repoId, filePath, fileContent, onPathSubmit, goToLine,
                     </div>
                 ) : fileContent !== null ? (
                     <Editor
-                        key={filePath} 
+                        key={`${repoId}-${filePath || "empty"}`} 
                         width="100%"
                         height="100%"
                         language={lang}
@@ -187,17 +199,20 @@ function FileEditorComp({ repoId, filePath, fileContent, onPathSubmit, goToLine,
                         theme="vs" 
                         onMount={handleEditorDidMount}
                         options={{
-                            readOnly: true, 
                             domReadOnly: true,
-                            minimap: { enabled: true }, 
-                            lineNumbers: "on", 
+                            selectOnLineNumbers: true,
+                            renderLineHighlight: "all",
+                            selectionHighlight: true,
+                            minimap: { enabled: true },
+                            lineNumbers: "on",
                             scrollBeyondLastLine: false,
-                            contextmenu: true, 
-                            fontFamily: "Consolas, Menlo, Monaco, 'Courier New', monospace", 
+                            contextmenu: true,
+                            fontFamily: "Consolas, Menlo, Monaco, 'Courier New', monospace",
                             fontSize: 14,
                             letterSpacing: 0,
                             fontLigatures: false,
-                            wordWrap: "off", 
+                            wordWrap: "off",
+                            automaticLayout: true,
                         }}
                     />
                 ) : (
