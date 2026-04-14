@@ -25,3 +25,19 @@ dist-ssr
 
 # custom
 .trae
+.tmp
+.superpowers
+.claude
+
+# Playwright
+/playwright-report
+/test-results
+/blob-report
+/artifacts
+/exploration-artifacts
+.playwright
+.playwright-cli
+e2e
+.gitignore
+screenshots
+playwright.config.ts

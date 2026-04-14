@@ -4,10 +4,12 @@ import { useSearchParams } from 'react-router-dom';
 import FileExplorer from '../components/FileExplorer';
 import FileEditor from '../components/FileEditor';
 import SearchPanel from '../components/SearchPanel';
+import ChatPanel from '../components/ChatPanel';
 import ActivityBar from '../components/ActivityBar';
 import IntelligenceResults from '../components/IntelligenceResults';
 import type { Tab } from '../api/types';
 import { RepoUIController, useRepoUIState } from '../controllers/RepoUIController';
+import type { ChatController } from '../controllers/ChatController';
 
 const fallbackController = new RepoUIController({
     repoId: '__fallback__',
@@ -20,19 +22,22 @@ interface WorkspaceLayoutProps {
     tabs: Tab[];
     activeTabId: string | null;
     controllers: Map<string, RepoUIController>;
+    chatControllers: Map<string, ChatController>;
 }
 
 // 辅助组件：连接 Controller 和 UI 组件
-function TabContent({ 
-    tab, 
-    isActive, 
-    controller, 
-    type 
-}: { 
-    tab: Tab; 
-    isActive: boolean; 
-    controller: RepoUIController; 
-    type: 'explorer' | 'editor' | 'search' | 'activity' | 'intelligence' 
+function TabContent({
+    tab,
+    isActive,
+    controller,
+    type,
+    chatControllers,
+}: {
+    tab: Tab;
+    isActive: boolean;
+    controller: RepoUIController;
+    type: 'explorer' | 'editor' | 'search' | 'activity' | 'intelligence' | 'chat';
+    chatControllers: Map<string, ChatController>;
 }) {
     const ui = useRepoUIState(controller);
     // 当该 tab 激活时，监听 URL 变化并同步到 controller
@@ -91,6 +96,13 @@ function TabContent({
                     onSelectRightPanel={(p) => controller.setRightPanelActive(p)}
                 />
             );
+        case 'chat': {
+            const chatController = chatControllers.get(tab.repoId);
+            if (!chatController) {
+                return <InitializingWorkspace label="正在初始化 AI 助手..." />;
+            }
+            return <ChatPanel controller={chatController} repoController={controller} />;
+        }
         case 'intelligence':
             return (
                 <IntelligenceResults
@@ -122,7 +134,7 @@ function InitializingWorkspace({ label }: { label: string }) {
     );
 }
 
-export default function WorkspaceLayout({ tabs, activeTabId, controllers }: WorkspaceLayoutProps) {
+export default function WorkspaceLayout({ tabs, activeTabId, controllers, chatControllers }: WorkspaceLayoutProps) {
     const RIGHT_PANEL_MIN_SIZE = 15;
     
     // 获取当前激活 Tab 的 Controller 以控制全局面板大小/状态
@@ -151,8 +163,7 @@ export default function WorkspaceLayout({ tabs, activeTabId, controllers }: Work
         // Right Panel
         const rightPanel = rightPanelRef.current;
         if (rightPanel) {
-            // 如果 active 为 'none'，我们不 resize，而是让条件渲染处理
-            if (activeUiState.right.active === 'search') {
+            if (activeUiState.right.active !== 'none') {
                 rightPanel.resize(Math.max(activeUiState.right.size, RIGHT_PANEL_MIN_SIZE));
             }
         }
@@ -168,7 +179,7 @@ export default function WorkspaceLayout({ tabs, activeTabId, controllers }: Work
         }
     }, [activeUiState, activeTabId]); // 当 activeTabId 变化时，activeUiState 也会变
 
-    const isRightPanelVisible = activeUiState?.right.active === 'search';
+    const isRightPanelVisible = activeUiState?.right.active !== 'none';
 
     return (
         <PanelGroup direction="horizontal" className="h-full w-full bg-bg-default" id="global-workspace-layout">
@@ -186,7 +197,7 @@ export default function WorkspaceLayout({ tabs, activeTabId, controllers }: Work
                     }
                     return (
                         <div key={tab.id} className="h-full w-full" style={{ display: tab.id === activeTabId ? 'block' : 'none' }}>
-                            <TabContent tab={tab} isActive={tab.id === activeTabId} controller={controller} type="explorer" />
+                            <TabContent tab={tab} isActive={tab.id === activeTabId} controller={controller} type="explorer" chatControllers={chatControllers} />
                         </div>
                     );
                 })}
@@ -215,7 +226,7 @@ export default function WorkspaceLayout({ tabs, activeTabId, controllers }: Work
                                     }
                                     return (
                                         <div key={tab.id} className="h-full w-full" style={{ display: tab.id === activeTabId ? 'block' : 'none' }}>
-                                            <TabContent tab={tab} isActive={tab.id === activeTabId} controller={controller} type="editor" />
+                                            <TabContent tab={tab} isActive={tab.id === activeTabId} controller={controller} type="editor" chatControllers={chatControllers} />
                                         </div>
                                     );
                                 })}
@@ -266,7 +277,7 @@ export default function WorkspaceLayout({ tabs, activeTabId, controllers }: Work
                                             // 注意：SearchPanel 只有在 active 时才需要显示，但为了保持状态（如搜索结果），我们也需要渲染它
                                             return (
                                                 <div key={tab.id} className="h-full w-full" style={{ display: tab.id === activeTabId ? 'block' : 'none' }}>
-                                                    <TabContent tab={tab} isActive={tab.id === activeTabId} controller={controller} type="search" />
+                                                    <TabContent tab={tab} isActive={tab.id === activeTabId} controller={controller} type={controller.getSnapshot().right.active === 'chat' ? 'chat' : 'search'} chatControllers={chatControllers} />
                                                 </div>
                                             );
                                         })}
@@ -288,7 +299,7 @@ export default function WorkspaceLayout({ tabs, activeTabId, controllers }: Work
                                     }
                                     return (
                                         <div key={tab.id} className="h-full w-full" style={{ display: tab.id === activeTabId ? 'block' : 'none' }}>
-                                            <TabContent tab={tab} isActive={tab.id === activeTabId} controller={controller} type="activity" />
+                                            <TabContent tab={tab} isActive={tab.id === activeTabId} controller={controller} type="activity" chatControllers={chatControllers} />
                                         </div>
                                     );
                                 })}
@@ -312,7 +323,7 @@ export default function WorkspaceLayout({ tabs, activeTabId, controllers }: Work
                             }
                             return (
                                 <div key={tab.id} className="h-full w-full" style={{ display: tab.id === activeTabId ? 'block' : 'none' }}>
-                                    <TabContent tab={tab} isActive={tab.id === activeTabId} controller={controller} type="intelligence" />
+                                    <TabContent tab={tab} isActive={tab.id === activeTabId} controller={controller} type="intelligence" chatControllers={chatControllers} />
                                 </div>
                             );
                         })}

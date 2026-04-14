@@ -8,6 +8,7 @@ import FeedbackModal from './components/FeedbackModal';
 import HomePage from './views/HomePage';
 import WorkspaceLayout from './views/WorkspaceLayout';
 import { RepoUIController } from './controllers/RepoUIController';
+import { ChatController } from './controllers/ChatController';
 
 function RepoRouteBinder({ onEnsureTab }: { onEnsureTab: (repoId: string, searchParams: URLSearchParams) => void }) {
     const { repoId = '' } = useParams();
@@ -49,6 +50,7 @@ function App() {
     // 组件会订阅 Controller 的变化，而不是 App 的变化。
     // 只要 tabs 列表变化，App 就会重渲染，controllers 也会被传递下去。
     const controllersRef = useRef(new Map<string, RepoUIController>());
+    const chatControllersRef = useRef(new Map<string, ChatController>());
     // 用于强制刷新 App (当添加新 Controller 时)
     const [, forceUpdate] = useState({});
 
@@ -98,6 +100,16 @@ function App() {
              }
              
              controllersRef.current.set(repoId, controller);
+
+             if (!chatControllersRef.current.has(repoId)) {
+                 chatControllersRef.current.set(repoId, new ChatController(repoId, () => {
+                     const repoController = controllersRef.current.get(repoId);
+                     if (!repoController) return null;
+                     const ed = repoController.getSnapshot().editor;
+                     return ed.activeFilePath ? { filePath: ed.activeFilePath, line: ed.urlLine ?? null, col: ed.urlCol ?? null } : null;
+                 }));
+             }
+
              forceUpdate({});
          }
     };
@@ -110,7 +122,8 @@ function App() {
         let changed = false;
         for (const [repoId, controller] of controllersRef.current.entries()) {
             if (!activeRepoIds.has(repoId)) {
-                // 可以添加 controller.dispose() 如果有的话
+                chatControllersRef.current.get(repoId)?.dispose();
+                chatControllersRef.current.delete(repoId);
                 controllersRef.current.delete(repoId);
                 changed = true;
             }
@@ -194,6 +207,8 @@ function App() {
         setActiveTabId(null);
         setCurrentView('home');
         controllersRef.current.clear();
+        chatControllersRef.current.forEach(c => c.dispose());
+        chatControllersRef.current.clear();
     };
 
     const activeTab = tabs.find(tab => tab.id === activeTabId);
@@ -235,10 +250,11 @@ function App() {
                     } />
                     <Route path="/repo/:repoId" element={
                         <div className="h-full w-full absolute top-0 left-0 visible">
-                            <WorkspaceLayout 
-                                tabs={tabs} 
-                                activeTabId={activeTabId} 
-                                controllers={controllersRef.current} 
+                            <WorkspaceLayout
+                                tabs={tabs}
+                                activeTabId={activeTabId}
+                                controllers={controllersRef.current}
+                                chatControllers={chatControllersRef.current}
                             />
                             <RepoRouteBinder onEnsureTab={(rid, params) => {
                                 const tabId = `tab_${rid}`;

@@ -8,8 +8,10 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
-    // 2. 添加插件并配置语言
     monacoEditorPlugin({
     })
   ],
+  test: {
+    exclude: ['e2e/**', 'node_modules/**'],
+  },
 })

@@ -1,9 +1,9 @@
 import React from 'react';
-import { Search } from 'lucide-react';
+import { Search, MessageSquare } from 'lucide-react';
 
 interface ActivityBarProps {
-  activeRightPanel: 'none' | 'search';
-  onSelectRightPanel: (p: 'none' | 'search') => void;
+  activeRightPanel: 'none' | 'search' | 'chat';
+  onSelectRightPanel: (p: 'none' | 'search' | 'chat') => void;
 }
 
 export default function ActivityBar({ activeRightPanel, onSelectRightPanel }: ActivityBarProps) {
@@ -15,6 +15,13 @@ export default function ActivityBar({ activeRightPanel, onSelectRightPanel }: Ac
         onClick={() => onSelectRightPanel(activeRightPanel === 'search' ? 'none' : 'search')}
       >
         <Search size={20} />
+      </button>
+      <button
+        title="AI 助手 (Toggle)"
+        className={`p-2 rounded-md ${activeRightPanel === 'chat' ? 'bg-bg-selected text-text-selected' : 'text-text-dim hover:bg-bg-hover'}`}
+        onClick={() => onSelectRightPanel(activeRightPanel === 'chat' ? 'none' : 'chat')}
+      >
+        <MessageSquare size={20} />
       </button>
       {activeRightPanel === 'none' && (
         <div className="w-6 h-6" />

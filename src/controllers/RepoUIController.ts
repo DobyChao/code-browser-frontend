@@ -3,7 +3,7 @@ import type { SearchPanelState } from '../types/ui';
 import type { IntelligenceItem } from '../api/types';
 import { api } from '../api';
 
-export type RepoRightPanelKind = 'none' | 'search';
+export type RepoRightPanelKind = 'none' | 'search' | 'chat';
 export type RepoBottomPanelState = 'open' | 'closed';
 
 export type RepoUIState = {
@@ -144,7 +144,7 @@ export class RepoUIController {
 
     // UI State Sync
     const nextRightActive: RepoRightPanelKind =
-      rp === 'none' || rp === 'search' ? rp : this.state.right.active;
+      rp === 'none' || rp === 'search' || rp === 'chat' ? rp : this.state.right.active;
     const nextBottomExpanded = intel === 'open' ? true : intel === 'closed' ? false : this.state.bottom.expanded;
 
     if (nextRightActive !== this.state.right.active) {
