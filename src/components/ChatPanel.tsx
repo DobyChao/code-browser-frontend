@@ -86,7 +86,15 @@ function ToolCallBlock({
   isExpanded,
   onToggle,
 }: ToolResultInfo & { onToggle: () => void }) {
-  const displayName = name === 'read_file' ? '读取文件' : name === 'search_code' ? '搜索代码' : name === 'get_current_context' ? '获取上下文' : name;
+  const TOOL_DISPLAY_NAMES: Record<string, string> = {
+    read_file: '读取文件',
+    search_code: '搜索代码',
+    get_current_context: '获取上下文',
+    list_directory: '浏览目录',
+    search_files: '搜索文件',
+    list_repositories: '仓库列表',
+  };
+  const displayName = TOOL_DISPLAY_NAMES[name] || name;
 
   return (
     <div className="my-1.5 rounded border border-border-default overflow-hidden">
