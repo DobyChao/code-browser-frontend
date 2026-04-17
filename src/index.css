@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
+@import "prismjs/themes/prism-tomorrow.css";
 
 /* 1. 定义 v4 主题 (CSS 变量) */
 @theme {

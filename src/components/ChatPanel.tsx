@@ -5,6 +5,10 @@ import { ChevronDown, ChevronRight, Send, Settings, Trash2, Square, Loader2 } fr
 import { ChatController, useChatState } from '../controllers/ChatController';
 import type { RepoUIController } from '../controllers/RepoUIController';
 import type { ChatMessage, EditorContext, LLMConfig, ToolResultInfo } from '../types/ui';
+import type { ParsedSegment } from '../types/chat-tags';
+import { parseLLMContent } from '../utils/parseLLMContent';
+import { CodeBlock } from './CodeBlock';
+import FileLink from './FileLink';
 
 // --- Sub-components ---
 
@@ -139,12 +143,95 @@ function UserMessage({ message }: { message: ChatMessage }) {
 function AssistantMessage({
   message,
   controller,
+  repoController,
 }: {
   message: ChatMessage;
   controller: ChatController;
+  repoController?: RepoUIController;
 }) {
   const hasContent = message.content && message.content.trim().length > 0;
   const hasReasoning = message.reasoningContent && message.reasoningContent.trim().length > 0;
+
+  const handleNavigate = (path: string, line: number) => {
+    repoController?.openFile(path, { line: String(line), col: null }, { highlight: true });
+  };
+
+  // Group segments: consecutive text+file-link → one bubble, code-block → independent card
+  const renderContent = () => {
+    const segments = parseLLMContent(message.content);
+    if (segments.length === 0) return null;
+
+    type SegmentGroup = { type: 'bubble'; segments: ParsedSegment[] } | { type: 'code-block'; segment: ParsedSegment };
+    const groups: SegmentGroup[] = [];
+    let currentBubble: ParsedSegment[] = [];
+
+    for (const seg of segments) {
+      if (seg.type === 'code-block') {
+        if (currentBubble.length > 0) {
+          groups.push({ type: 'bubble', segments: currentBubble });
+          currentBubble = [];
+        }
+        groups.push({ type: 'code-block', segment: seg });
+      } else {
+        currentBubble.push(seg);
+      }
+    }
+    if (currentBubble.length > 0) {
+      groups.push({ type: 'bubble', segments: currentBubble });
+    }
+
+    const lastBubbleIndex = groups.reduce((acc, g, i) => g.type === 'bubble' ? i : acc, -1);
+
+    return groups.map((group, gi) => {
+      if (group.type === 'code-block') {
+        return (
+          <CodeBlock
+            key={gi}
+            src={group.segment.props.src}
+            startLine={group.segment.props.startLine}
+            endLine={group.segment.props.endLine}
+            repoId={controller.getRepoId()}
+            onNavigate={handleNavigate}
+          />
+        );
+      }
+
+      // Bubble group: text + file-link segments
+      const isLastBubble = gi === lastBubbleIndex;
+      return (
+        <div
+          key={gi}
+          className="px-3 py-2 rounded-lg bg-bg-sidebar text-text-default text-sm [&_pre]:bg-bg-default [&_pre]:p-2 [&_pre]:rounded [&_pre]:text-xs [&_pre]:overflow-auto [&_pre]:overflow-x-auto [&_pre]:max-w-full [&_pre]:border [&_pre]:border-border-default [&_code]:text-xs [&_code]:bg-bg-default [&_code]:px-1 [&_code]:rounded [&_code]:break-all [&_a]:text-blue-600 [&_a]:underline"
+        >
+          {group.segments.map((seg, si) => {
+            if (seg.type === 'text') {
+              return (
+                <span key={si} className="prose prose-sm max-w-none [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0.5">
+                  <Markdown remarkPlugins={[remarkGfm]}>{seg.content}</Markdown>
+                </span>
+              );
+            }
+            if (seg.type === 'file-link') {
+              return (
+                <FileLink
+                  key={si}
+                  path={seg.props.path}
+                  line={seg.props.line}
+                  onNavigate={handleNavigate}
+                >
+                  {seg.props.children}
+                </FileLink>
+              );
+            }
+            return null;
+          })}
+          {isLastBubble && message.isStreaming && (
+            <span className="inline-block w-1.5 h-4 bg-blue-500 animate-pulse ml-0.5 align-text-bottom" />
+          )}
+        </div>
+      );
+    });
+  };
 
   return (
     <div className="max-w-[90%] space-y-1">
@@ -155,16 +242,7 @@ function AssistantMessage({
           onToggle={() => controller.toggleReasoningExpanded(message.id)}
         />
       )}
-      {hasContent && (
-        <div className="px-3 py-2 rounded-lg bg-bg-sidebar text-text-default text-sm [&_pre]:bg-bg-default [&_pre]:p-2 [&_pre]:rounded [&_pre]:text-xs [&_pre]:overflow-auto [&_pre]:overflow-x-auto [&_pre]:max-w-full [&_pre]:border [&_pre]:border-border-default [&_code]:text-xs [&_code]:bg-bg-default [&_code]:px-1 [&_code]:rounded [&_code]:break-all [&_a]:text-blue-600 [&_a]:underline">
-          <div className="prose prose-sm max-w-none [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0.5">
-            <Markdown remarkPlugins={[remarkGfm]}>{message.content}</Markdown>
-          </div>
-          {message.isStreaming && (
-            <span className="inline-block w-1.5 h-4 bg-blue-500 animate-pulse ml-0.5 align-text-bottom" />
-          )}
-        </div>
-      )}
+      {hasContent && renderContent()}
       {message.toolResults?.map((tr) => (
         <ToolCallBlock
           key={tr.callId}
@@ -273,7 +351,7 @@ export default function ChatPanel({ controller, repoController }: {
             msg.role === 'user' ? (
               <UserMessage key={msg.id} message={msg} />
             ) : msg.role === 'assistant' ? (
-              <AssistantMessage key={msg.id} message={msg} controller={controller} />
+              <AssistantMessage key={msg.id} message={msg} controller={controller} repoController={repoController} />
             ) : null
           )}
           {state.error && (

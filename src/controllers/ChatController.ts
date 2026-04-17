@@ -223,6 +223,23 @@ export class ChatController {
     const systemBase = 'You are an AI assistant helping users analyze a code repository. You can read files and search code using the provided tools. Respond in the same language as the user\'s question. Be concise and helpful.';
 
     let systemContent = systemBase;
+
+    // Add tag usage instructions
+    systemContent += `
+
+When referencing code files in your responses, use these custom tags:
+
+1. Code block display (shows highlighted code with line numbers):
+   <code-block src="path/to/file.ext" lines="startLine-endLine" />
+   Example: <code-block src="src/api/tools.ts" lines="45-62" />
+
+2. File reference link (clickable link to navigate to a file):
+   <file-link path="path/to/file.ext" line="42">display text</file-link>
+   Example: <file-link path="src/utils/index.ts" line="10">utils.ts:10</file-link>
+
+The line number in <file-link> and the lines attribute in <code-block> are optional.
+Use these tags naturally within your response text. Do NOT use them as tool calls.`;
+
     if (this.currentEditorContext) {
       const ctx = this.currentEditorContext;
       systemContent += `\n\n用户当前正在查看:\n- 文件: ${ctx.filePath}`;
@@ -344,6 +361,8 @@ export class ChatController {
   stopStreaming = () => {
     this.abortController?.abort();
   };
+
+  getRepoId = () => this.repoId;
 
   dispose = () => {
     this.abortController?.abort();
