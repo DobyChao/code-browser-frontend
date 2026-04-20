@@ -1,107 +1,41 @@
-import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Loader2, Search, FileText } from 'lucide-react';
 import { createPortal } from 'react-dom';
-import { api } from '../api';
-import { Utils } from '../utils';
+import { useFileSearch } from '../hooks/useFileSearch';
 
 interface GoToFileSearchProps {
   repoId: string;
   onFileSelect: (path: string) => void;
 }
 
+interface TooltipState {
+  path: string;
+  x: number;
+  y: number;
+}
+
 export default function GoToFileSearch({ repoId, onFileSelect }: GoToFileSearchProps) {
-  const [query, setQuery] = useState('');
-  const [results, setResults] = useState<string[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const [activeIndex, setActiveIndex] = useState(-1);
-  const [hoveredPath, setHoveredPath] = useState<string | null>(null);
-  const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
+  const search = useFileSearch(repoId, onFileSelect);
+  const [tooltip, setTooltip] = useState<TooltipState | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
-
-  const debouncedSearch = useMemo(
-    () =>
-      Utils.debounce(async (searchQuery: string) => {
-        if (!searchQuery) {
-          setResults([]);
-          setIsLoading(false);
-          setIsDropdownOpen(false);
-          return;
-        }
-        try {
-          const files = await api.searchFiles(repoId, searchQuery, 'zoekt');
-          setResults(files.slice(0, 15));
-          setIsLoading(false);
-          setIsDropdownOpen(files.length > 0);
-          setActiveIndex(0);
-        } catch (error) {
-          console.error('File search failed:', error);
-          setIsLoading(false);
-          setIsDropdownOpen(false);
-        }
-      }, 300),
-    [repoId]
-  );
-
-  const handleQueryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newQuery = e.target.value;
-    setQuery(newQuery);
-    setIsLoading(true);
-    debouncedSearch(newQuery);
-  };
-
-  const handleSelectFile = (path: string) => {
-    onFileSelect(path);
-    setQuery('');
-    setResults([]);
-    setIsDropdownOpen(false);
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      setActiveIndex((prev) => Math.min(prev + 1, results.length - 1));
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setActiveIndex((prev) => Math.max(prev - 1, 0));
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      if (activeIndex >= 0 && results[activeIndex]) {
-        handleSelectFile(results[activeIndex]);
-      }
-    } else if (e.key === 'Escape') {
-      setIsDropdownOpen(false);
-    }
-  };
-
-  const handleItemEnter = (path: string, el: HTMLElement) => {
-    setHoveredPath(path);
-    const rect = el.getBoundingClientRect();
-    setTooltipPos({ x: rect.right + 6, y: rect.top });
-  };
-
-  const handleItemLeave = () => {
-    setHoveredPath(null);
-    setTooltipPos(null);
-  };
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsDropdownOpen(false);
+        search.setDropdownOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, []);
+  }, [search.setDropdownOpen]);
 
   return (
     <div className="relative" ref={dropdownRef}>
       <div className="relative">
         <div className="absolute inset-y-0 left-0 flex items-center pl-2 pointer-events-none">
-          {isLoading ? (
+          {search.isLoading ? (
             <Loader2 size={16} className="animate-spin text-text-dim" />
           ) : (
             <Search size={16} className="text-text-dim" />
@@ -111,47 +45,58 @@ export default function GoToFileSearch({ repoId, onFileSelect }: GoToFileSearchP
           type="text"
           placeholder="Go to file..."
           className="w-full pl-8 pr-2 py-1 text-sm bg-bg-input border border-border-input rounded-sm"
-          value={query}
-          onChange={handleQueryChange}
-          onKeyDown={handleKeyDown}
-          onFocus={() => setIsDropdownOpen(results.length > 0)}
+          value={search.query}
+          onChange={(e) => search.setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') setTooltip(null);
+            search.handleKeyDown(e);
+          }}
+          onFocus={() => search.setDropdownOpen(search.query.length > 0)}
         />
       </div>
-      {isDropdownOpen && results.length > 0 && (
+      {search.isDropdownOpen && search.query.length > 0 && (
         <div className="absolute z-10 w-full mt-1 bg-bg-default border border-border-default rounded-md shadow-lg max-h-60 overflow-y-auto no-scrollbar">
-          <ul className="py-1">
-            {results.map((path, index) => (
-              <li
-                key={path}
-                className={`flex items-center space-x-2 px-3 py-1.5 text-sm cursor-pointer ${
-                  index === activeIndex ? 'bg-bg-selected text-text-selected' : 'hover:bg-bg-hover'
-                }`}
-                onMouseEnter={(e) => {
-                  setActiveIndex(index);
-                  handleItemEnter(path, e.currentTarget);
-                }}
-                onMouseLeave={handleItemLeave}
-                onClick={() => handleSelectFile(path)}
-              >
-                <FileText size={16} className="flex-shrink-0 text-text-dim" />
-                <span className="truncate">{path}</span>
-              </li>
-            ))}
-          </ul>
+          {search.results.length > 0 ? (
+            <ul className="py-1">
+              {search.results.map((path, index) => (
+                <li
+                  key={path}
+                  className={`flex items-center space-x-2 px-3 py-1.5 text-sm cursor-pointer ${
+                    index === search.activeIndex ? 'bg-bg-selected text-text-selected' : 'hover:bg-bg-hover'
+                  }`}
+                  onMouseEnter={(e) => {
+                    search.setActiveIndex(index);
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    setTooltip({ path, x: rect.right + 6, y: rect.top });
+                  }}
+                  onMouseLeave={() => setTooltip(null)}
+                  onClick={() => {
+                    setTooltip(null);
+                    search.selectFile(path);
+                  }}
+                >
+                  <FileText size={16} className="flex-shrink-0 text-text-dim" />
+                  <span className="truncate">{path}</span>
+                </li>
+              ))}
+            </ul>
+          ) : !search.isLoading ? (
+            <div className="px-3 py-2 text-sm text-text-dim">No files found</div>
+          ) : null}
         </div>
       )}
-      {hoveredPath && tooltipPos && createPortal(
+      {tooltip && createPortal(
         <div
           style={{
             position: 'fixed',
-            left: tooltipPos.x,
-            top: tooltipPos.y,
+            left: tooltip.x,
+            top: tooltip.y,
             zIndex: 9999,
             pointerEvents: 'none',
           }}
           className="px-2 py-1 text-xs rounded bg-bg-default text-text-default border border-border-default shadow-lg whitespace-nowrap"
         >
-          {hoveredPath}
+          {tooltip.path}
         </div>,
         document.body
       )}
