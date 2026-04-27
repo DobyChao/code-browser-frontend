@@ -50,6 +50,7 @@ export class ChatController {
       error: null,
       config,
       showConfig: !config, // Show config on first use
+      maxContextMessages: 15,
     };
   }
 
@@ -128,103 +129,150 @@ export class ChatController {
   };
 
   private runAgenticLoop = async (signal: AbortSignal) => {
-    const MAX_TOOL_ITERATIONS = 5;
+    const MAX_TOOL_ITERATIONS = 50;
+    const MAX_CONTEXT_MESSAGES = 15;
 
-    for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
-      if (signal.aborted) return;
+    // Expose conversation turn count and context limit to UI
+    const userMessageCount = this.state.messages.filter(m => m.role === 'user').length;
+    this.state = { ...this.state, maxContextMessages: MAX_CONTEXT_MESSAGES, conversationTurnCount: userMessageCount };
+    this.emit();
 
-      // Capture the current assistant message ID for tool result attachment
-      const currentMsgs = this.state.messages;
-      const assistantMsgId = currentMsgs[currentMsgs.length - 1]?.id;
-
-      // Build messages with 20-message sliding window
-      const contextMessages = this.buildLLMMessages();
-
-      let fullContent = '';
-      let fullReasoning = '';
-      const response = await this.llmClient!.chatCompletion({
-        messages: contextMessages,
-        tools: TOOL_DEFINITIONS,
-        signal,
-        onToken: (token) => {
-          fullContent += token;
-          this.updateStreamingAssistant({ content: fullContent });
-        },
-        onReasoningToken: (token) => {
-          fullReasoning += token;
-          this.updateStreamingAssistant({ reasoningContent: fullReasoning });
-        },
-      });
-
-      if (signal.aborted) return;
-
-      // Update final content
-      this.updateStreamingAssistant({
-        content: response.content,
-        ...(response.reasoningContent && { reasoningContent: response.reasoningContent }),
-      });
-
-      // No tool calls — done
-      if (!response.tool_calls?.length) return;
-
-      // Process tool calls
-      const toolCalls: ToolCallInfo[] = response.tool_calls.map((tc) => ({
-        id: tc.id,
-        name: tc.function.name,
-        arguments: tc.function.arguments,
-      }));
-
-      // Add tool calls to the streaming assistant message
-      const msgs = [...this.state.messages];
-      const currentMsgIdx = this.findMessageById(msgs, assistantMsgId);
-      if (currentMsgIdx >= 0) {
-        msgs[currentMsgIdx] = { ...msgs[currentMsgIdx], toolCalls };
-        this.state = { ...this.state, messages: msgs };
-        this.emit();
-      }
-
-      // Execute each tool
-      for (const tc of response.tool_calls) {
+    try {
+      for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
         if (signal.aborted) return;
 
-        let args: Record<string, string>;
-        try {
-          args = JSON.parse(tc.function.arguments);
-        } catch {
-          this.appendToolResult(assistantMsgId, tc.id, tc.function.name, 'Error: invalid tool arguments');
-          continue;
+        // Capture the current assistant message ID for tool result attachment
+        const currentMsgs = this.state.messages;
+        const assistantMsgId = currentMsgs[currentMsgs.length - 1]?.id;
+
+        // Build messages with sliding window
+        const contextMessages = this.buildLLMMessages();
+
+        let fullContent = '';
+        let fullReasoning = '';
+        const response = await this.llmClient!.chatCompletion({
+          messages: contextMessages,
+          tools: TOOL_DEFINITIONS,
+          signal,
+          onToken: (token) => {
+            fullContent += token;
+            this.updateStreamingAssistant({ content: fullContent });
+          },
+          onReasoningToken: (token) => {
+            fullReasoning += token;
+            this.updateStreamingAssistant({ reasoningContent: fullReasoning });
+          },
+        });
+
+        if (signal.aborted) return;
+
+        // Update final content
+        this.updateStreamingAssistant({
+          content: response.content,
+          ...(response.reasoningContent && { reasoningContent: response.reasoningContent }),
+        });
+
+        // No tool calls — done
+        if (!response.tool_calls?.length) return;
+
+        // Generate new interaction ID for this tool call sequence
+        const interactionId = generateId();
+
+        // Process tool calls
+        const toolCalls: ToolCallInfo[] = response.tool_calls.map((tc) => ({
+          id: tc.id,
+          name: tc.function.name,
+          arguments: tc.function.arguments,
+        }));
+
+        // Add tool calls and interactionId to the streaming assistant message
+        const msgs = [...this.state.messages];
+        const currentMsgIdx = this.findMessageById(msgs, assistantMsgId);
+        if (currentMsgIdx >= 0) {
+          msgs[currentMsgIdx] = { ...msgs[currentMsgIdx], toolCalls, interactionId };
+          this.state = { ...this.state, messages: msgs };
+          this.emit();
         }
 
-        // Add loading tool result
-        const loadingResult: ToolResultInfo = {
-          callId: tc.id,
-          name: tc.function.name,
-          result: '',
-          isLoading: true,
-          isExpanded: false,
-        };
-        this.appendToolResultObj(assistantMsgId, loadingResult);
+        // Execute each tool
+        for (const tc of response.tool_calls) {
+          if (signal.aborted) return;
 
-        const result = await this.toolExecutor.execute(tc.function.name, args);
+          let args: Record<string, string>;
+          try {
+            args = JSON.parse(tc.function.arguments);
+          } catch {
+            this.appendToolResult(assistantMsgId, tc.id, tc.function.name, 'Error: invalid tool arguments');
+            continue;
+          }
 
-        // Update with actual result
-        this.updateToolResult(assistantMsgId, tc.id, result);
+          // Add loading tool result
+          const loadingResult: ToolResultInfo = {
+            callId: tc.id,
+            name: tc.function.name,
+            result: '',
+            isLoading: true,
+            isExpanded: false,
+          };
+          this.appendToolResultObj(assistantMsgId, loadingResult);
+
+          const result = await this.toolExecutor.execute(tc.function.name, args);
+
+          // Update with actual result
+          this.updateToolResult(assistantMsgId, tc.id, result);
+        }
+
+        // Add a new assistant message for the next iteration
+        const nextAssistant: ChatMessage = { id: generateId(), role: 'assistant', content: '', isStreaming: true };
+        this.state = { ...this.state, messages: [...this.state.messages, nextAssistant] };
+        this.emit();
       }
-
-      // Add a new assistant message for the next iteration
-      const nextAssistant: ChatMessage = { id: generateId(), role: 'assistant', content: '', isStreaming: true };
-      this.state = { ...this.state, messages: [...this.state.messages, nextAssistant] };
+    } finally {
+      // Reset conversation turn count when loop ends
+      this.state = { ...this.state, conversationTurnCount: 0 };
       this.emit();
     }
   };
 
-  private buildLLMMessages(): ChatMessageForLLM[] {
-    const recent = this.state.messages.slice(-20);
+private buildLLMMessages(): ChatMessageForLLM[] {
+    const MAX_MESSAGES_WITHOUT_TOOLS = 15;
+    const messages = this.state.messages;
+    
+    if (messages.length <= MAX_MESSAGES_WITHOUT_TOOLS) {
+      return this.buildLLMMessagesFromArray(messages);
+    }
+    
+    let recent = messages.slice(-MAX_MESSAGES_WITHOUT_TOOLS);
+    
+    const lastMsg = recent[recent.length - 1];
+    const firstMsg = recent[0];
+    
+    let boundaryIndex = 0;
+    if (lastMsg?.interactionId) {
+      for (let i = recent.length - 1; i >= 0; i--) {
+        if (recent[i].interactionId === lastMsg.interactionId) {
+          boundaryIndex = i;
+          break;
+        }
+      }
+    }
+    
+    if (boundaryIndex > 0 && firstMsg?.toolResults?.length) {
+      const hasPartialToolResult = !firstMsg.toolCalls?.length && firstMsg.toolResults?.length > 0;
+      if (hasPartialToolResult) {
+        const fullRecent = messages.slice(-(MAX_MESSAGES_WITHOUT_TOOLS + boundaryIndex));
+        recent = fullRecent;
+      }
+    }
+    
+    return this.buildLLMMessagesFromArray(recent);
+  }
+
+  private buildLLMMessagesFromArray(msgArray: ChatMessage[]): ChatMessageForLLM[] {
     const systemBase = 'You are an AI assistant helping users analyze a code repository. You can read files and search code using the provided tools. Respond in the same language as the user\'s question. Be concise and helpful.';
-
+    
     let systemContent = systemBase;
-
-    // Add tag usage instructions
+    
     systemContent += `
 
 When referencing code files in your responses, use these custom tags:
@@ -256,7 +304,7 @@ Use these tags naturally within your response text. Do NOT use them as tool call
       },
     ];
 
-    for (const msg of recent) {
+    for (const msg of msgArray) {
       if (msg.role === 'user') {
         result.push({ role: 'user', content: msg.content });
       } else if (msg.role === 'assistant') {
@@ -270,7 +318,6 @@ Use these tags naturally within your response text. Do NOT use them as tool call
         }
         result.push(llmMsg);
       }
-      // Add tool results as tool messages
       if (msg.toolResults) {
         for (const tr of msg.toolResults) {
           result.push({
@@ -312,7 +359,7 @@ Use these tags naturally within your response text. Do NOT use them as tool call
     const idx = this.findMessageById(msgs, messageId);
     if (idx >= 0 && msgs[idx].role === 'assistant') {
       const toolResults = [...(msgs[idx].toolResults || []), result];
-      msgs[idx] = { ...msgs[idx], toolResults };
+      msgs[idx] = { ...msgs[idx], toolResults, interactionId: msgs[idx].interactionId };
       this.state = { ...this.state, messages: msgs };
       this.emit();
     }
