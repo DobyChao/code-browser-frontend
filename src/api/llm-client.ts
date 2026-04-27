@@ -33,6 +33,7 @@ export type ChatCompletionResponse = {
   content: string;
   reasoningContent?: string;
   tool_calls?: ToolCallDelta[];
+  finish_reason?: string;
 };
 
 type SSEDelta = {
@@ -100,6 +101,7 @@ export class LLMClient {
     let reasoningContentAccum = '';
     const toolCallMap = new Map<number, { id: string; name: string; arguments: string }>();
     let buffer = '';
+    let finishReason: string | undefined;
 
     try {
       while (true) {
@@ -126,6 +128,12 @@ export class LLMClient {
           try {
             const parsed = JSON.parse(data);
             const delta: SSEDelta | undefined = parsed.choices?.[0]?.delta;
+
+            const chunkFinishReason = parsed.choices?.[0]?.finish_reason;
+            if (chunkFinishReason) {
+              finishReason = chunkFinishReason;
+            }
+
             if (!delta) continue;
 
             // Content tokens
@@ -157,7 +165,7 @@ export class LLMClient {
       }
     } catch (e) {
       if ((e as Error).name === 'AbortError' || signal?.aborted) {
-        return { content: fullContent, reasoningContent: reasoningContentAccum || undefined };
+        return { content: fullContent, reasoningContent: reasoningContentAccum || undefined, finish_reason: finishReason };
       }
       throw e;
     }
@@ -173,10 +181,18 @@ export class LLMClient {
       }
     }
 
+    if (finishReason && finishReason !== 'stop') {
+      console.warn(`[LLMClient] Non-standard finish_reason: ${finishReason}`, {
+        contentLength: fullContent.length,
+        hasToolCalls: tool_calls.length > 0,
+      });
+    }
+
     return {
       content: fullContent,
       reasoningContent: reasoningContentAccum || undefined,
       tool_calls: tool_calls.length > 0 ? tool_calls : undefined,
+      finish_reason: finishReason,
     };
   }
 }
