@@ -157,10 +157,10 @@ export class ToolExecutor {
           return JSON.stringify(repos, null, 2);
         }
         default:
-          return `Unknown tool: ${name}`;
+          return JSON.stringify({ error: true, message: `Unknown tool: ${name}` });
       }
     } catch (e) {
-      return `Error executing ${name}: ${(e as Error).message}`;
+      return JSON.stringify({ error: true, message: `Error executing ${name}: ${(e as Error).message}` });
     }
   }
 }
