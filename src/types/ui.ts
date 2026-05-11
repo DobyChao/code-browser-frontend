@@ -40,6 +40,7 @@ export type ChatMessage = {
   toolCalls?: ToolCallInfo[];
   toolResults?: ToolResultInfo[];
   isStreaming?: boolean;
+  iterationIndex?: number;
 };
 
 export type LLMConfig = {
@@ -60,4 +61,6 @@ export type ChatPanelState = {
   error: string | null;
   config: LLMConfig | null;
   showConfig: boolean;
+  toolIterationCount?: number;
+  maxToolIterations?: number;
 };

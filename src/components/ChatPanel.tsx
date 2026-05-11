@@ -402,6 +402,9 @@ export default function ChatPanel({ controller, repoController }: {
               </button>
             )}
           </div>
+          {state.isStreaming && state.toolIterationCount != null && state.maxToolIterations != null && (
+            <div className="text-xs text-text-dim mt-1">工具轮次 {state.toolIterationCount}/{state.maxToolIterations}</div>
+          )}
         </div>
       )}
     </div>
