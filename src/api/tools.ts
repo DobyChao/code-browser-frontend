@@ -134,11 +134,16 @@ export class ToolExecutor {
           return sliced.join('\n');
         }
         case 'search_code': {
-          const results = await api.searchContent(this.repoId, args.query, 'zoekt');
-          if (!results || results.length === 0) return 'No results found.';
-          // Limit results to keep context manageable
-          const limited = results.slice(0, 15);
-          return JSON.stringify(limited, null, 2);
+          const resp = await api.searchContent(this.repoId, args.query, { pageSize: 30 });
+          if (!resp?.results?.length) return 'No results found.';
+          const limited = resp.results.slice(0, 15);
+          const summary: Record<string, unknown> = {
+            total: resp.total,
+            showing: limited.length,
+            results: limited,
+          };
+          if (resp.truncated) summary.truncated = true;
+          return JSON.stringify(summary, null, 2);
         }
         case 'list_directory': {
           const tree = await api.getTree(this.repoId, args.path || '');
@@ -146,10 +151,16 @@ export class ToolExecutor {
           return JSON.stringify(tree, null, 2);
         }
         case 'search_files': {
-          const results = await api.searchFiles(this.repoId, args.query, 'zoekt');
-          if (!results || results.length === 0) return 'No files found.';
-          const limited = results.slice(0, 15);
-          return JSON.stringify(limited, null, 2);
+          const resp = await api.searchFiles(this.repoId, args.query, { pageSize: 30 });
+          if (!resp?.files?.length) return 'No files found.';
+          const limited = resp.files.slice(0, 15);
+          const summary: Record<string, unknown> = {
+            total: resp.total,
+            showing: limited.length,
+            files: limited,
+          };
+          if (resp.truncated) summary.truncated = true;
+          return JSON.stringify(summary, null, 2);
         }
         case 'list_repositories': {
           const repos = await api.getRepositories();

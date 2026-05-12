@@ -22,6 +22,22 @@ export interface ContentSearchResult {
   fragments: SearchFragment[];
 }
 
+export interface PaginatedContentResponse {
+  results: ContentSearchResult[];
+  total: number;
+  page: number;
+  page_size: number;
+  truncated?: boolean;
+}
+
+export interface PaginatedFilesResponse {
+  files: string[];
+  total: number;
+  page: number;
+  page_size: number;
+  truncated?: boolean;
+}
+
 export interface IntelligenceRange {
   startLine: number;
   startColumn: number;

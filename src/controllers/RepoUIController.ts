@@ -65,6 +65,10 @@ export class RepoUIController {
       includePattern: '',
       excludePattern: '',
       showAdvanced: false,
+      currentPage: 1,
+      totalResults: 0,
+      totalPages: 0,
+      truncated: false,
     },
     editor: {
       activeFilePath: null,

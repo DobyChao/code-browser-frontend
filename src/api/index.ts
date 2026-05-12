@@ -1,4 +1,4 @@
-import type { Repository, TreeItem, ContentSearchResult, IntelligenceItem } from './types';
+import type { Repository, TreeItem, ContentSearchResult, IntelligenceItem, PaginatedContentResponse, PaginatedFilesResponse } from './types';
 
 const DEFAULT_API_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
@@ -52,10 +52,21 @@ export const api = {
         api.get(`/repositories/${repoId}/tree?path=${encodeURIComponent(path)}`, options),
     getBlob: (repoId: string, path: string, options?: { signal?: AbortSignal }): Promise<string> =>
         api.get(`/repositories/${repoId}/blob?path=${encodeURIComponent(path)}`, options),
-    searchContent: (repoId: string, query: string, engine: string, options?: { signal?: AbortSignal }): Promise<ContentSearchResult[]> =>
-        api.get(`/repositories/${repoId}/search?q=${encodeURIComponent(query)}&engine=${engine}`, options),
-    searchFiles: (repoId: string, query: string, engine: string, options?: { signal?: AbortSignal }): Promise<string[]> =>
-        api.get(`/repositories/${repoId}/search-files?q=${encodeURIComponent(query)}&engine=${engine}`, options),
+    searchContent: (repoId: string, query: string, options?: { signal?: AbortSignal; branch?: string; fileFilter?: string; page?: number; pageSize?: number }): Promise<PaginatedContentResponse> => {
+        let url = `/repositories/${repoId}/search?q=${encodeURIComponent(query)}&format=v2`;
+        if (options?.branch) url += `&branch=${encodeURIComponent(options.branch)}`;
+        if (options?.fileFilter) url += `&file=${encodeURIComponent(options.fileFilter)}`;
+        if (options?.page) url += `&page=${options.page}`;
+        if (options?.pageSize) url += `&page_size=${options.pageSize}`;
+        return api.get(url, options);
+    },
+    searchFiles: (repoId: string, query: string, options?: { signal?: AbortSignal; branch?: string; page?: number; pageSize?: number }): Promise<PaginatedFilesResponse> => {
+        let url = `/repositories/${repoId}/search-files?q=${encodeURIComponent(query)}&format=v2`;
+        if (options?.branch) url += `&branch=${encodeURIComponent(options.branch)}`;
+        if (options?.page) url += `&page=${options.page}`;
+        if (options?.pageSize) url += `&page_size=${options.pageSize}`;
+        return api.get(url, options);
+    },
 
     getDefinitions: (payload: { repoId: string; filePath: string; line: number; character: number }, options?: { signal?: AbortSignal }): Promise<IntelligenceItem[]> =>
         api.post(`/intelligence/definitions`, payload, options),

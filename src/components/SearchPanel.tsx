@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Search, FileText, CaseSensitive, WholeWord, Regex, CodeXml, ChevronDown, ChevronRight, List, ListTree, X, MoreHorizontal } from 'lucide-react';
+import { Search, FileText, CaseSensitive, WholeWord, Regex, CodeXml, ChevronDown, ChevronRight, ChevronLeft, List, ListTree, X, MoreHorizontal } from 'lucide-react';
 import { api } from '../api';
 import { Utils } from '../utils';
 import { buildZoektFileQuery, buildZoektQuery } from '../utils/queryBuilder'; // 导入新工具
@@ -36,6 +36,10 @@ export default function SearchPanel(props: SearchPanelProps) {
         includePattern: '',
         excludePattern: '',
         showAdvanced: false,
+        currentPage: 1,
+        totalResults: 0,
+        totalPages: 0,
+        truncated: false,
     });
     const state = (isControlled ? props.state : internalState) as SearchPanelState;
     const setState = (isControlled ? props.onStateChange : setInternalState) as React.Dispatch<React.SetStateAction<SearchPanelState>>;
@@ -60,6 +64,10 @@ export default function SearchPanel(props: SearchPanelProps) {
     const includePattern = state.includePattern;
     const excludePattern = state.excludePattern;
     const showAdvanced = state.showAdvanced;
+    const currentPage = state.currentPage;
+    const totalResults = state.totalResults;
+    const totalPages = state.totalPages;
+    const truncated = state.truncated;
 
     const contentResults = (searchType === 'content' ? (results as ContentSearchResult[]) : []) ?? [];
     const fileResults = (searchType === 'file' ? (results as string[]) : []) ?? [];
@@ -235,22 +243,20 @@ export default function SearchPanel(props: SearchPanelProps) {
         if (el instanceof HTMLElement) el.scrollIntoView({ block: 'nearest' });
     }, [selectedIndex]);
 
-    const handleSearch = async (e: React.FormEvent) => {
-        e.preventDefault();
+    const executeSearch = async (page: number = 1) => {
         if (!query && !includePattern.trim() && !excludePattern.trim()) {
             setState(prev => ({ ...prev, results: [], hasSearched: false }));
             return;
         }
-        setState(prev => ({ ...prev, isLoading: true, error: null, results: [] }));
+        setState(prev => ({ ...prev, isLoading: true, error: null, results: [], currentPage: page }));
 
         try {
             abortRef.current?.abort();
             const controller = new AbortController();
             abortRef.current = controller;
-            // 构建最终查询字符串
+
             let finalQuery = query;
             if (!useZoektSyntax && searchType === 'content') {
-                // 只有在内容搜索且不使用原生语法时，才使用构建器
                 finalQuery = buildZoektQuery(query, {
                     caseSensitive,
                     wholeWord,
@@ -274,24 +280,40 @@ export default function SearchPanel(props: SearchPanelProps) {
                 finalQuery = `${prefix} ${finalQuery}`.trim();
             }
 
-            let searchResults;
-            const engine = 'zoekt';
             if (searchType === 'content') {
-                searchResults = await api.searchContent(repoId, finalQuery, engine, { signal: controller.signal });
+                const resp = await api.searchContent(repoId, finalQuery, {
+                    signal: controller.signal,
+                    page,
+                    pageSize: 200,
+                });
+                setState(prev => ({
+                    ...prev,
+                    results: resp.results || [],
+                    totalResults: resp.total,
+                    totalPages: Math.ceil(resp.total / resp.page_size),
+                    truncated: resp.truncated,
+                }));
             } else {
-                // 文件名搜索通常比较简单，可能不需要复杂的构建器，或者只需要部分功能
-                // 这里暂时保持原样，直接传 query。如果需要也可以应用 buildZoektQuery，
-                // 但需要调整 buildZoektQuery 以支持 file: 前缀
-                const raw = await api.searchFiles(repoId, finalQuery, engine, { signal: controller.signal });
+                const resp = await api.searchFiles(repoId, finalQuery, {
+                    signal: controller.signal,
+                    page,
+                    pageSize: 200,
+                });
                 const includes = includePattern.split(',').map(s => s.trim()).filter(Boolean);
                 const excludes = excludePattern.split(',').map(s => s.trim()).filter(Boolean);
-                searchResults = raw.filter((p) => {
+                const filtered = resp.files.filter((p) => {
                     if (includes.length > 0 && !includes.some(k => p.includes(k))) return false;
                     if (excludes.length > 0 && excludes.some(k => p.includes(k))) return false;
                     return true;
                 });
+                setState(prev => ({
+                    ...prev,
+                    results: filtered,
+                    totalResults: resp.total,
+                    totalPages: Math.ceil(resp.total / resp.page_size),
+                    truncated: resp.truncated,
+                }));
             }
-            setState(prev => ({ ...prev, results: searchResults || [] }));
         } catch (err) {
             if ((err as any)?.name === 'AbortError') {
                 setState(prev => ({ ...prev, isLoading: false }));
@@ -302,9 +324,14 @@ export default function SearchPanel(props: SearchPanelProps) {
         setState(prev => ({ ...prev, isLoading: false, hasSearched: true }));
     };
 
+    const handleSearch = (e: React.FormEvent) => {
+        e.preventDefault();
+        executeSearch(1);
+    };
+
     const switchSearchType = (type: 'content' | 'file') => {
         if (searchType !== type) {
-            setState(prev => ({ ...prev, results: [], error: null, hasSearched: false }));
+            setState(prev => ({ ...prev, results: [], error: null, hasSearched: false, currentPage: 1, totalResults: 0, totalPages: 0, truncated: false }));
         }
         setState(prev => ({ ...prev, searchType: type }));
     };
@@ -350,13 +377,13 @@ export default function SearchPanel(props: SearchPanelProps) {
 
     const summaryText = useMemo(() => {
         if (!hasSearched || isLoading) return '';
+        const suffix = truncated ? '（结果已截断）' : '';
         if (searchType === 'content') {
             const fileCount = groupedContent.length;
-            const matchCount = contentResults.length;
-            return fileCount === 0 ? '0 个结果' : `${matchCount} 个结果（${fileCount} 个文件）`;
+            return totalResults === 0 ? '0 个结果' : `${totalResults} 个结果（${fileCount} 个文件）${suffix}`;
         }
-        return fileResults.length === 0 ? '0 个结果' : `${fileResults.length} 个文件`;
-    }, [contentResults.length, groupedContent.length, hasSearched, isLoading, fileResults.length, searchType]);
+        return totalResults === 0 ? '0 个结果' : `${totalResults} 个文件${suffix}`;
+    }, [groupedContent.length, hasSearched, isLoading, searchType, totalResults, truncated]);
 
     return (
         <div className={`bg-bg-sidebar h-full flex flex-col border-l border-border-default text-text-default min-w-0 overflow-hidden ${className}`}>
@@ -702,6 +729,31 @@ export default function SearchPanel(props: SearchPanelProps) {
                             );
                         })}
                     </ul>
+                )}
+
+                {/* 分页 */}
+                {hasSearched && !isLoading && totalPages > 1 && (
+                    <div className="flex items-center justify-between px-2 py-1 mt-2 border-t border-border-default text-xs text-text-dim">
+                        <button
+                            type="button"
+                            disabled={currentPage <= 1}
+                            className="p-1 rounded hover:bg-bg-hover disabled:opacity-30 disabled:cursor-not-allowed"
+                            onClick={() => executeSearch(currentPage - 1)}
+                            title="上一页"
+                        >
+                            <ChevronLeft size={14} />
+                        </button>
+                        <span>{currentPage} / {totalPages}</span>
+                        <button
+                            type="button"
+                            disabled={currentPage >= totalPages}
+                            className="p-1 rounded hover:bg-bg-hover disabled:opacity-30 disabled:cursor-not-allowed"
+                            onClick={() => executeSearch(currentPage + 1)}
+                            title="下一页"
+                        >
+                            <ChevronRight size={14} />
+                        </button>
+                    </div>
                 )}
             </div>
         </div>

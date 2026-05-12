@@ -15,6 +15,10 @@ export type SearchPanelState = {
   includePattern: string;
   excludePattern: string;
   showAdvanced: boolean;
+  currentPage: number;
+  totalResults: number;
+  totalPages: number;
+  truncated?: boolean;
 };
 
 export type ToolCallInfo = {
