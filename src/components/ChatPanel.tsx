@@ -402,6 +402,9 @@ export default function ChatPanel({ controller, repoController }: {
               </button>
             )}
           </div>
+          {state.isStreaming && state.conversationTurnCount !== undefined && state.conversationTurnCount > 0 && (
+            <div className="text-xs text-text-dim mt-1">对话 {state.conversationTurnCount}/{state.maxContextMessages ?? 15}</div>
+          )}
         </div>
       )}
     </div>
