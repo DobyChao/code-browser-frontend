@@ -8,8 +8,12 @@ export type RepoBottomPanelState = 'open' | 'closed';
 
 export type RepoUIState = {
   right: {
+    // Single source of truth for the right panel: `active === 'none'` <=> collapsed.
     active: RepoRightPanelKind;
+    // Width (percent of the group) the panel had when last expanded; never overwritten by the collapsed size.
     size: number;
+    // Last non-'none' view, restored when the panel is dragged/clicked back open.
+    lastView: Exclude<RepoRightPanelKind, 'none'>;
   };
   bottom: {
     expanded: boolean;
@@ -43,7 +47,7 @@ type RepoUIControllerDeps = {
 export class RepoUIController {
   private listeners = new Set<Listener>();
   private state: RepoUIState = {
-    right: { active: 'search', size: 20 },
+    right: { active: 'search', size: 20, lastView: 'search' },
     bottom: { 
       expanded: false, 
       pinned: false,
@@ -152,7 +156,11 @@ export class RepoUIController {
     const nextBottomExpanded = intel === 'open' ? true : intel === 'closed' ? false : this.state.bottom.expanded;
 
     if (nextRightActive !== this.state.right.active) {
-      nextState.right = { ...nextState.right, active: nextRightActive };
+      nextState.right = {
+        ...nextState.right,
+        active: nextRightActive,
+        lastView: nextRightActive === 'none' ? nextState.right.lastView : nextRightActive,
+      };
       hasChanges = true;
     }
     if (nextBottomExpanded !== this.state.bottom.expanded) {
@@ -361,9 +369,19 @@ export class RepoUIController {
 
   setRightPanelActive = (active: RepoRightPanelKind, opts?: { writeUrl?: boolean }) => {
     if (active === this.state.right.active) return;
-    this.state = { ...this.state, right: { ...this.state.right, active } };
+    const lastView = active === 'none' ? this.state.right.lastView : active;
+    this.state = { ...this.state, right: { ...this.state.right, active, lastView } };
     this.emit();
     if (opts?.writeUrl !== false) this.writeUrl({ rp: active }, { replace: true });
+  };
+
+  // Called when the panel was collapsed by dragging (onCollapse): clear the selection + URL.
+  collapseRightPanel = () => this.setRightPanelActive('none');
+
+  // Called when the panel was expanded by dragging (onExpand): restore the view from before the collapse.
+  expandRightPanel = () => {
+    if (this.state.right.active !== 'none') return;
+    this.setRightPanelActive(this.state.right.lastView);
   };
 
   setRightPanelSize = (size: number) => {
