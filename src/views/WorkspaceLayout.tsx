@@ -36,7 +36,7 @@ function TabContent({
     tab: Tab;
     isActive: boolean;
     controller: RepoUIController;
-    type: 'explorer' | 'editor' | 'search' | 'activity' | 'intelligence' | 'chat';
+    type: 'explorer' | 'editor' | 'search' | 'activity' | 'intelligence' | 'chat' | 'right';
     chatControllers: Map<string, ChatController>;
 }) {
     const ui = useRepoUIState(controller);
@@ -48,7 +48,10 @@ function TabContent({
         }
     }, [isActive, searchParams, controller]);
     
-    switch (type) {
+    // 'right' = whichever view the right panel currently shows (or showed last, while collapsed)
+    const resolvedType = type === 'right' ? (ui.right.lastView === 'chat' ? 'chat' : 'search') : type;
+
+    switch (resolvedType) {
         case 'explorer':
             return (
                 <FileExplorer
@@ -156,30 +159,44 @@ export default function WorkspaceLayout({ tabs, activeTabId, controllers, chatCo
     const controllerForState = activeController || controllers.values().next().value || fallbackController;
     const activeUiState = useRepoUIState(controllerForState);
 
-    // 同步 Panel 状态
+    // 同步 Panel 状态（controller -> Panel，单向）。
+    // - 真相源：controller.right.active（'none' <=> 收起）、controller.bottom.expanded。
+    // - 只依赖这两个布尔/枚举值和 activeTabId，而不是整个 state 对象，
+    //   避免无关状态更新（输入搜索词等）重复触发 collapse/expand/resize。
+    // - 先用 isCollapsed() 判断再调用，Panel 回调 onCollapse/onExpand 回写时因值相同而是 no-op，不会循环。
+    const rightActive = activeUiState.right.active;
+    const rightSize = activeUiState.right.size;
+    const bottomExpanded = activeUiState.bottom.expanded;
+    const lastAppliedTabRef = useRef<string | null>(null);
+
     useEffect(() => {
-        if (!activeUiState) return;
-        
-        // Right Panel
         const rightPanel = rightPanelRef.current;
-        if (rightPanel) {
-            if (activeUiState.right.active !== 'none') {
-                rightPanel.resize(Math.max(activeUiState.right.size, RIGHT_PANEL_MIN_SIZE));
-            }
+        if (!rightPanel) return;
+        const tabChanged = lastAppliedTabRef.current !== activeTabId;
+        lastAppliedTabRef.current = activeTabId;
+        if (rightActive === 'none') {
+            if (!rightPanel.isCollapsed()) rightPanel.collapse();
+        } else if (rightPanel.isCollapsed()) {
+            // 注意：对已收起的 Panel 调用 resize() 不会展开它（react-resizable-panels 3.0.6），必须先 expand()
+            rightPanel.expand();
+            rightPanel.resize(Math.max(rightSize, RIGHT_PANEL_MIN_SIZE));
+        } else if (tabChanged) {
+            // Panel 是全局共用的，切换 Tab 时恢复该 Tab 自己的宽度
+            rightPanel.resize(Math.max(rightSize, RIGHT_PANEL_MIN_SIZE));
         }
+        // rightSize 刻意不放进依赖：拖拽过程中的宽度由 onResize 回写，不应反向触发 resize()
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [rightActive, activeTabId]);
 
-        // Bottom Panel
+    useEffect(() => {
         const bottomPanel = bottomPanelRef.current;
-        if (bottomPanel) {
-            if (activeUiState.bottom.expanded) {
-                bottomPanel.expand();
-            } else {
-                bottomPanel.collapse();
-            }
+        if (!bottomPanel) return;
+        if (bottomExpanded) {
+            if (bottomPanel.isCollapsed()) bottomPanel.expand();
+        } else if (!bottomPanel.isCollapsed()) {
+            bottomPanel.collapse();
         }
-    }, [activeUiState, activeTabId]); // 当 activeTabId 变化时，activeUiState 也会变
-
-    const isRightPanelVisible = activeUiState?.right.active !== 'none';
+    }, [bottomExpanded, activeTabId]);
 
     return (
         <PanelGroup direction="horizontal" className="h-full w-full bg-bg-default" id="global-workspace-layout">
@@ -211,7 +228,15 @@ export default function WorkspaceLayout({ tabs, activeTabId, controllers, chatCo
                     
                     {/* Top Row: Editor + Search + ActivityBar */}
                     <Panel id="top-row" order={1} minSize={40} defaultSize={80} className="min-w-0">
-                        <PanelGroup direction="horizontal" className="h-full w-full min-w-0">
+                        {/*
+                          活动栏不再是 PanelGroup 里的 Panel，而是 flex 兄弟节点（固定宽度）。
+                          原因：右侧栏原来夹在「编辑器」和「活动栏(maxSize=3)」之间，imperative 的
+                          collapse()/expand()/resize() 会和右邻的活动栏做 pivot，而活动栏吸收不了宽度，
+                          于是这些调用全是静默 no-op。让右侧栏成为组内最后一个 Panel 后，
+                          它与左边的编辑器 pivot，拖拽和 imperative 调用行为一致。
+                        */}
+                        <div className="flex h-full w-full min-w-0">
+                        <PanelGroup direction="horizontal" className="h-full min-w-0" style={{ width: 'auto', flex: '1 1 0%' }}>
                             
                             {/* Editor */}
                             <Panel id="editor-panel" order={1} minSize={40} className="min-w-0">
@@ -232,62 +257,49 @@ export default function WorkspaceLayout({ tabs, activeTabId, controllers, chatCo
                                 })}
                             </Panel>
 
-                            <PanelResizeHandle 
-                                className="panel-handle-vertical"
-                                disabled={!isRightPanelVisible}
-                                onDragging={(isDragging) => {
-                                    if (!isRightPanelVisible) return;
-                                    if (isDragging) return;
-                                    const panel = rightPanelRef.current;
-                                    if (!panel || !activeController) return;
-                                    const size = panel.getSize();
-                                    const nextSize = Math.max(size, RIGHT_PANEL_MIN_SIZE);
-                                    if (nextSize !== size) panel.resize(nextSize);
-                                    activeController.setRightPanelSize(nextSize);
-                                }}
-                            >
+                            {/* 始终可用：收起（宽度 0）后仍可从这条边拖出来 */}
+                            <PanelResizeHandle className="panel-handle-vertical">
                                 <div className="panel-handle-bar" />
                             </PanelResizeHandle>
 
-                            {/* Right Panel (Search) */}
-                            {isRightPanelVisible && (
-                                <>
-                                    <Panel 
-                                        id="right-panel" 
-                                        ref={rightPanelRef}
-                                        order={2}
-                                        defaultSize={Math.max(activeUiState?.right.size || 20, RIGHT_PANEL_MIN_SIZE)}
-                                        minSize={RIGHT_PANEL_MIN_SIZE}
-                                        collapsible={false}
-                                        className="min-w-0 overflow-hidden"
-                                        onResize={(size) => {
-                                            const nextSize = Math.max(size, RIGHT_PANEL_MIN_SIZE);
-                                            activeController?.setRightPanelSize(nextSize);
-                                        }}
-                                    >
-                                        {tabs.map(tab => {
-                                            const controller = controllers.get(tab.repoId);
-                                            if (!controller) {
-                                                return (
-                                                    <div key={tab.id} className="h-full w-full" style={{ display: tab.id === activeTabId ? 'block' : 'none' }}>
-                                                        <InitializingWorkspace label="正在初始化搜索..." />
-                                                    </div>
-                                                );
-                                            }
-                                            // 注意：SearchPanel 只有在 active 时才需要显示，但为了保持状态（如搜索结果），我们也需要渲染它
+                            {/* Right Panel (Search / Chat)：始终挂载，用 collapsible 表示「收起」，不再条件渲染/卸载 */}
+                            <Panel 
+                                id="right-panel" 
+                                ref={rightPanelRef}
+                                order={2}
+                                defaultSize={activeUiState?.right.active === 'none' ? 0 : Math.max(activeUiState?.right.size || 20, RIGHT_PANEL_MIN_SIZE)}
+                                minSize={RIGHT_PANEL_MIN_SIZE}
+                                collapsible={true}
+                                collapsedSize={0}
+                                className="min-w-0 overflow-hidden"
+                                onCollapse={() => activeController?.collapseRightPanel()}
+                                onExpand={() => activeController?.expandRightPanel()}
+                                onResize={(size) => {
+                                    // 收起时 size 为 0，不能覆盖「收起前的宽度」，否则展开后宽度丢失
+                                    if (size >= RIGHT_PANEL_MIN_SIZE) activeController?.setRightPanelSize(size);
+                                }}
+                            >
+                                    {tabs.map(tab => {
+                                        const controller = controllers.get(tab.repoId);
+                                        if (!controller) {
                                             return (
                                                 <div key={tab.id} className="h-full w-full" style={{ display: tab.id === activeTabId ? 'block' : 'none' }}>
-                                                    <TabContent tab={tab} isActive={tab.id === activeTabId} controller={controller} type={controller.getSnapshot().right.active === 'chat' ? 'chat' : 'search'} chatControllers={chatControllers} />
+                                                    <InitializingWorkspace label="正在初始化搜索..." />
                                                 </div>
                                             );
-                                        })}
-                                    </Panel>
-                                    <PanelResizeHandle className="panel-handle pointer-events-none" disabled />
-                                </>
-                            )}
+                                        }
+                                        // 注意：SearchPanel 只有在 active 时才需要显示，但为了保持状态（如搜索结果），我们也需要渲染它
+                                        return (
+                                            <div key={tab.id} className="h-full w-full" style={{ display: tab.id === activeTabId ? 'block' : 'none' }}>
+                                                <TabContent tab={tab} isActive={tab.id === activeTabId} controller={controller} type="right" chatControllers={chatControllers} />
+                                            </div>
+                                        );
+                                    })}
+                            </Panel>
+                        </PanelGroup>
 
-                            {/* Activity Bar */}
-                            <Panel id="activity-bar" order={3} defaultSize={3} minSize={3} maxSize={3} collapsible={false}>
+                        {/* Activity Bar（固定宽度） */}
+                        <div className="h-full w-10 shrink-0" data-panel-id="activity-bar">
                                 {tabs.map(tab => {
                                     const controller = controllers.get(tab.repoId);
                                     if (!controller) {
@@ -303,15 +315,25 @@ export default function WorkspaceLayout({ tabs, activeTabId, controllers, chatCo
                                         </div>
                                     );
                                 })}
-                            </Panel>
-
-                        </PanelGroup>
+                        </div>
+                        </div>
                     </Panel>
 
                     <PanelResizeHandle className="panel-handle-horizontal"><div className="panel-handle-bar" /></PanelResizeHandle>
 
                     {/* Bottom: Intelligence */}
-                    <Panel id="bottom-panel" ref={bottomPanelRef} order={2} defaultSize={20} minSize={20} collapsible={true} collapsedSize={4}>
+                    <Panel
+                        id="bottom-panel"
+                        ref={bottomPanelRef}
+                        order={2}
+                        defaultSize={20}
+                        minSize={20}
+                        collapsible={true}
+                        collapsedSize={4}
+                        // 拖拽收起/展开也要回写 controller，否则 bottom.expanded 与实际高度不同步
+                        onCollapse={() => activeController?.setBottomExpanded(false)}
+                        onExpand={() => activeController?.setBottomExpanded(true)}
+                    >
                          {tabs.map(tab => {
                             const controller = controllers.get(tab.repoId);
                             if (!controller) {
